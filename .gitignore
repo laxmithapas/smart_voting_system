@@ -1,0 +1,29 @@
+# Virtual Environments
+venv/
+backend/venv/
+backend/venv_backup/
+
+# Databases
+*.db
+voting.db
+backend/voting.db
+
+# Blockchain state file
+backend/blockchain_state.json
+
+# Temporary files
+backend/temp.png
+backend/__pycache__/
+**/__pycache__/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Frontend build directory
+frontend/dist/
+
+# OS/Editor configs
+.vscode/
+.DS_Store
+*.log

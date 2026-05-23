@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import WebcamCapture from '../components/WebcamCapture';
-import { ShieldCheck, Vote, LogOut, Camera } from 'lucide-react';
+import { ShieldCheck, Vote, LogOut, Camera, Loader2, AlertCircle, CheckCircle, Info, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
+
 
 export default function VotingBooth() {
   const [voterId, setVoterId] = useState('');
@@ -9,30 +11,171 @@ export default function VotingBooth() {
   const [image, setImage] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   
-  const [authStatus, setAuthStatus] = useState('');
+  const [authStatus, setAuthStatus] = useState(null); // { type: 'loading'|'error', message: '' }
   const [sessionData, setSessionData] = useState(null); // Holds voter data after auth
   
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState('');
-  const [voteStatus, setVoteStatus] = useState('');
+  const [voteStatus, setVoteStatus] = useState(null); // { type: 'loading'|'success'|'error', message: '' }
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   
+  const [errors, setErrors] = useState({ voterId: '', aadharId: '' });
+  const [electionSettings, setElectionSettings] = useState(null);
+  const [electionLoading, setElectionLoading] = useState(true);
+  
+  const [voterStatus, setVoterStatus] = useState(null);
+  const [receiptData, setReceiptData] = useState(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('http://localhost:8000/candidates')
+    // Fetch election settings
+    fetch(`${API_BASE_URL}/election`)
+      .then(res => res.json())
+      .then(data => {
+        setElectionSettings(data);
+        setElectionLoading(false);
+      })
+      .catch(err => {
+        console.error("Error fetching election settings:", err);
+        setElectionLoading(false);
+      });
+
+    // Fetch active candidates only
+    fetch(`${API_BASE_URL}/candidates?active_only=true`)
       .then(res => res.json())
       .then(data => setCandidates(data.candidates || []))
       .catch(err => console.error("Error fetching candidates:", err));
   }, []);
 
+  useEffect(() => {
+    if (voterId.length === 10 && /^[a-zA-Z0-9]{10}$/.test(voterId)) {
+      fetch(`${API_BASE_URL}/voter/status/${voterId}`)
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error("Failed to fetch voter status");
+        })
+        .then(data => {
+          setVoterStatus(data);
+        })
+        .catch(err => {
+          console.error(err);
+          setVoterStatus(null);
+        });
+    }
+  }, [voterId]);
+
+  const renderProgressPipeline = () => {
+    const isRegistered = voterStatus?.registered === true;
+    const isNotRegistered = voterStatus?.registered === false;
+    const isVerified = !!sessionData;
+    const isVoted = sessionData?.hasVoted || !!receiptData || voterStatus?.has_voted;
+
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderRadius: '16px',
+        padding: '1rem',
+        marginBottom: '2rem',
+        border: '1px solid var(--glass-border)',
+        position: 'relative'
+      }}>
+        {/* Step 1: Registered */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, zIndex: 2 }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: isRegistered ? 'var(--secondary)' : isNotRegistered ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+            color: '#fff', fontSize: '0.85rem', fontWeight: 'bold', transition: 'all 0.3s'
+          }}>
+            {isRegistered ? '✓' : isNotRegistered ? '✗' : '1'}
+          </div>
+          <span style={{ fontSize: '0.75rem', marginTop: '0.4rem', fontWeight: 600, color: isRegistered ? 'var(--secondary)' : isNotRegistered ? 'var(--accent)' : 'var(--text-muted)' }}>
+            {isRegistered ? 'Registered' : isNotRegistered ? 'Not Registered' : '1. Check ID'}
+          </span>
+        </div>
+
+        <div style={{ height: '2px', background: isRegistered ? 'var(--secondary)' : 'rgba(255,255,255,0.1)', flex: 1, margin: '0 -10px 15px -10px', zIndex: 1 }}></div>
+
+        {/* Step 2: Face Verified */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, zIndex: 2 }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: isVerified ? 'var(--secondary)' : 'rgba(255,255,255,0.1)',
+            color: '#fff', fontSize: '0.85rem', fontWeight: 'bold', transition: 'all 0.3s'
+          }}>
+            {isVerified ? '✓' : '2'}
+          </div>
+          <span style={{ fontSize: '0.75rem', marginTop: '0.4rem', fontWeight: 600, color: isVerified ? 'var(--secondary)' : 'var(--text-muted)' }}>
+            2. Face Verify
+          </span>
+        </div>
+
+        <div style={{ height: '2px', background: isVerified ? 'var(--secondary)' : 'rgba(255,255,255,0.1)', flex: 1, margin: '0 -10px 15px -10px', zIndex: 1 }}></div>
+
+        {/* Step 3: Ballot Cast */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, zIndex: 2 }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: isVoted ? 'var(--secondary)' : voterStatus?.has_voted ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+            color: '#fff', fontSize: '0.85rem', fontWeight: 'bold', transition: 'all 0.3s'
+          }}>
+            {isVoted ? '✓' : '3'}
+          </div>
+          <span style={{ fontSize: '0.75rem', marginTop: '0.4rem', fontWeight: 600, color: isVoted ? 'var(--secondary)' : voterStatus?.has_voted ? 'var(--accent)' : 'var(--text-muted)' }}>
+            {isVoted ? 'Ballot Cast' : voterStatus?.has_voted ? 'Already Voted' : '3. Cast Vote'}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  // Validations
+  const validateVoterId = (val) => {
+    if (!val) return 'Voter ID is required.';
+    if (!/^[a-zA-Z0-9]{10}$/.test(val)) return 'Voter ID must be a 10-character alphanumeric code.';
+    return '';
+  };
+
+  const validateAadharId = (val) => {
+    if (!val) return 'Aadhar Card number is required.';
+    if (!/^\d{12}$/.test(val)) return 'Aadhar Card must be exactly 12 digits.';
+    return '';
+  };
+
+  const handleVoterIdChange = (e) => {
+    const val = e.target.value;
+    setVoterId(val);
+    setErrors(prev => ({ ...prev, voterId: validateVoterId(val) }));
+    if (!/^[a-zA-Z0-9]{10}$/.test(val)) {
+      setVoterStatus(null);
+    }
+  };
+
+  const handleAadharIdChange = (e) => {
+    const val = e.target.value;
+    setAadharId(val);
+    setErrors(prev => ({ ...prev, aadharId: validateAadharId(val) }));
+  };
+
   const authenticateUser = async (currentImage) => {
-    if (!voterId || !aadharId || !currentImage) {
-      alert("Please provide Voter ID, Aadhar Number, and Face Scan");
+    const vErr = validateVoterId(voterId);
+    const aErr = validateAadharId(aadharId);
+
+    if (vErr || aErr || !currentImage) {
+      setErrors({ voterId: vErr, aadharId: aErr });
+      setAuthStatus({ type: 'error', message: "Please provide valid Voter ID, Aadhar Number, and Face Scan" });
       return;
     }
-    setAuthStatus("Authenticating ID and Face Data...");
+    
+    setAuthStatus({ type: 'loading', message: "Authenticating ID and Face Data..." });
     try {
-      const res = await fetch('http://localhost:8000/authenticate', {
+      const res = await fetch(`${API_BASE_URL}/authenticate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ voter_id: voterId, aadhar_id: aadharId, image: currentImage })
@@ -41,7 +184,7 @@ export default function VotingBooth() {
       
       if (res.ok && data.authenticated) {
         if (data.has_voted) {
-          setAuthStatus("Error: You have already cast your vote!");
+          setAuthStatus({ type: 'error', message: "Error: You have already cast your vote!" });
         } else {
           setSessionData({
             voterId,
@@ -49,13 +192,13 @@ export default function VotingBooth() {
             hasVoted: data.has_voted,
             faceImage: currentImage
           });
-          setAuthStatus("");
+          setAuthStatus(null);
         }
       } else {
-        setAuthStatus(`Authentication Failed: ${data.detail || "Credentials did not match"}`);
+        setAuthStatus({ type: 'error', message: `Authentication Failed: ${data.detail || "Credentials did not match"}` });
       }
-    } catch (err) {
-      setAuthStatus("Error connecting to auth server. Is the backend running?");
+    } catch {
+      setAuthStatus({ type: 'error', message: "Error connecting to auth server. Is the backend running?" });
     }
   };
 
@@ -64,52 +207,205 @@ export default function VotingBooth() {
     authenticateUser(image);
   };
 
-  const handleVoteSubmit = async (e) => {
+  const handleVoteSubmit = (e) => {
     e.preventDefault();
     if (!selectedCandidate || !sessionData) return;
-    
-    setVoteStatus("Casting encrypted vote to blockchain...");
+    setShowConfirmModal(true);
+  };
+
+  const confirmAndCastVote = async () => {
+    setShowConfirmModal(false);
+    setVoteStatus({ type: 'loading', message: "Casting encrypted vote to blockchain..." });
     try {
-      const res = await fetch('http://localhost:8000/vote', {
+      const res = await fetch(`${API_BASE_URL}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ voter_id: sessionData.voterId, candidate_id: selectedCandidate })
       });
       const data = await res.json();
       if (res.ok) {
-        setVoteStatus("Vote Successfully Cast & Recorded on Blockchain! Verifying...");
+        setVoteStatus({ type: 'success', message: "Vote Successfully Cast & Recorded on Blockchain!" });
+        setReceiptData(data);
         const updatedSession = { ...sessionData, hasVoted: true };
         setSessionData(updatedSession);
-        
-        setTimeout(() => {
-           setVoteStatus('');
-           setSessionData(null);
-           setVoterId('');
-           setAadharId('');
-           setImage(null);
-           setSelectedCandidate('');
-           navigate('/results');
-        }, 3000);
       } else {
-        setVoteStatus(`Failed to cast vote: ${data.detail}`);
+        setVoteStatus({ type: 'error', message: `Failed to cast vote: ${data.detail}` });
       }
-    } catch (err) {
-      setVoteStatus("Error connecting to server. Is the backend running?");
+    } catch {
+      setVoteStatus({ type: 'error', message: "Error connecting to server. Is the backend running?" });
     }
   };
 
   const handleLogoutVoter = () => {
     setSessionData(null);
     setVoterId(''); setAadharId(''); setImage(null);
+    setAuthStatus(null);
+    setVoterStatus(null);
+    setReceiptData(null);
+    setErrors({ voterId: '', aadharId: '' });
   };
 
   const handleCapture = (imgBase64) => {
     setImage(imgBase64);
     setShowCamera(false);
-    if (voterId && aadharId) {
-      authenticateUser(imgBase64);
-    }
+    setAuthStatus(null);
   };
+
+  const getElectionValidationError = () => {
+    if (!electionSettings) return null;
+    if (!electionSettings.is_active) {
+      return "Voting is closed because the election is inactive.";
+    }
+    const now = new Date();
+    if (electionSettings.start_date) {
+      const start = new Date(electionSettings.start_date);
+      if (now < start) {
+        return `Voting has not started yet. (Scheduled start: ${start.toLocaleString()})`;
+      }
+    }
+    if (electionSettings.end_date) {
+      const end = new Date(electionSettings.end_date);
+      if (now > end) {
+        return `Voting has ended. (Closed: ${end.toLocaleString()})`;
+      }
+    }
+    return null;
+  };
+
+  const validationError = getElectionValidationError();
+
+  if (electionLoading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
+        <Loader2 className="animate-spin" size={32} color="var(--primary)" />
+        <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Checking election status...</p>
+      </div>
+    );
+  }
+
+  if (validationError) {
+    return (
+      <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '3rem auto', textAlign: 'center', border: '1px solid var(--accent)' }}>
+        <ShieldAlert size={48} color="var(--accent)" style={{ margin: '0 auto 1.5rem auto' }} />
+        <h2 style={{ marginBottom: '1rem' }}>Voting Booth Closed</h2>
+        <p style={{ color: 'var(--text-main)', background: 'rgba(244, 63, 94, 0.08)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(244, 63, 94, 0.2)', fontSize: '1rem', fontWeight: 500 }}>
+          {validationError}
+        </p>
+        <p style={{ color: 'var(--text-muted)', marginTop: '1.5rem', fontSize: '0.9rem' }}>
+          Please contact the election administration board if you believe this is an error.
+        </p>
+        <div style={{ marginTop: '2rem' }}>
+          <button className="btn-secondary" onClick={() => navigate('/home')}>
+            Return Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (receiptData) {
+    return (
+      <div className="glass-panel animate-fade-in printable-receipt" style={{ maxWidth: '600px', margin: '2rem auto', border: '1px solid var(--secondary)', position: 'relative' }}>
+        <style>{`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            .printable-receipt, .printable-receipt * {
+              visibility: visible;
+            }
+            .printable-receipt {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 100%;
+              color: #000 !important;
+              background: #fff !important;
+              box-shadow: none !important;
+              border: 1px solid #000 !important;
+              padding: 2rem !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .text-gradient {
+              background: none !important;
+              -webkit-text-fill-color: initial !important;
+              color: #000 !important;
+            }
+          }
+        `}</style>
+        
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div style={{
+            width: '64px', height: '64px', borderRadius: '50%',
+            background: 'rgba(16, 185, 129, 0.1)', color: 'var(--secondary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto'
+          }}>
+            <ShieldCheck size={40} />
+          </div>
+          <h2 style={{ margin: 0 }} className="text-gradient">Official Ballot Receipt</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Decentralized & Cryptographically Secured</p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--glass-border)', marginBottom: '2rem' }} className="receipt-details">
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Voter ID (Masked)</span>
+            <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{voterId.substring(0, 3)}****{voterId.substring(7)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Block Number</span>
+            <span style={{ fontWeight: 600, color: 'var(--secondary)' }}>#{receiptData.block_index}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Block Hash</span>
+            <span style={{ fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', color: 'var(--text-main)' }}>{receiptData.block_hash}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Transaction Hash (Reference)</span>
+            <span style={{ fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', color: 'var(--primary)' }}>{receiptData.tx_hash}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Timestamp</span>
+            <span style={{ fontWeight: 600 }}>{new Date(receiptData.timestamp).toLocaleString()}</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="no-print">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <button className="btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              Print Receipt
+            </button>
+            <button className="btn-secondary" onClick={() => {
+              const text = `OFFICIAL BALLOT RECEIPT\n\nVoter ID: ${voterId.substring(0, 3)}****${voterId.substring(7)}\nBlock Number: #${receiptData.block_index}\nBlock Hash: ${receiptData.block_hash}\nTransaction Hash: ${receiptData.tx_hash}\nTimestamp: ${new Date(receiptData.timestamp).toLocaleString()}\nStatus: Verified on Blockchain\n`;
+              const blob = new Blob([text], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `ballot-receipt-${receiptData.block_index}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              Download TXT
+            </button>
+          </div>
+          
+          <button className="btn-primary" onClick={() => {
+            setReceiptData(null);
+            setSessionData(null);
+            setVoterId('');
+            setAadharId('');
+            setImage(null);
+            setSelectedCandidate('');
+            setVoterStatus(null);
+            navigate('/results');
+          }} style={{ width: '100%', padding: '1rem' }}>
+            Done & View Results
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (sessionData) {
     return (
@@ -122,6 +418,8 @@ export default function VotingBooth() {
             <LogOut size={16} /> Exit Booth
           </button>
         </div>
+
+        {renderProgressPipeline()}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 2fr', gap: '2rem' }}>
           <div style={{ background: 'rgba(15, 23, 42, 0.4)', borderRadius: '16px', padding: '1.5rem', textAlign: 'center' }}>
@@ -175,9 +473,31 @@ export default function VotingBooth() {
                   <button type="submit" className="btn-primary" style={{ width: '100%', padding: '1rem' }} disabled={!selectedCandidate}>
                     Submit Secure Vote <Vote size={20} />
                   </button>
-                  {voteStatus && (
-                    <div style={{ marginTop: '1rem', padding: '1.5rem', background: voteStatus.includes('Successfully') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,0,0,0.1)', border: voteStatus.includes('Successfully') ? '1px solid var(--secondary)' : '1px solid var(--accent)', color: voteStatus.includes('Successfully') ? 'var(--secondary)' : 'white', borderRadius: '12px', textAlign: 'center' }}>
-                      {voteStatus}
+                  {voteStatus && voteStatus.message && (
+                    <div style={{ 
+                      marginTop: '1.5rem', 
+                      padding: '1.25rem', 
+                      background: voteStatus.type === 'success' 
+                        ? 'rgba(16, 185, 129, 0.1)' 
+                        : voteStatus.type === 'error' 
+                        ? 'rgba(244, 63, 94, 0.1)' 
+                        : 'rgba(99, 102, 241, 0.1)', 
+                      border: voteStatus.type === 'success' 
+                        ? '1px solid var(--secondary)' 
+                        : voteStatus.type === 'error' 
+                        ? '1px solid var(--accent)' 
+                        : '1px solid var(--primary)', 
+                      color: 'var(--text-main)', 
+                      borderRadius: '16px', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.75rem',
+                      textAlign: 'left'
+                    }}>
+                      {voteStatus.type === 'loading' && <Loader2 className="animate-spin" size={20} color="var(--primary)" />}
+                      {voteStatus.type === 'success' && <CheckCircle size={20} color="var(--secondary)" />}
+                      {voteStatus.type === 'error' && <AlertCircle size={20} color="var(--accent)" />}
+                      <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>{voteStatus.message}</span>
                     </div>
                   )}
                 </form>
@@ -185,18 +505,64 @@ export default function VotingBooth() {
             )}
           </div>
         </div>
+
+        {/* Vote confirmation Modal */}
+        {showConfirmModal && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            backgroundColor: 'rgba(2, 6, 23, 0.9)', backdropFilter: 'blur(8px)',
+            display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999
+          }}>
+            <div className="glass-panel animate-fade-in" style={{ 
+              width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', 
+              gap: '1.5rem', textAlign: 'center', position: 'relative' 
+            }}>
+              <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Vote size={24} className="text-gradient" /> Confirm Your Ballot
+              </h3>
+              
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+                You are about to cast your vote. This action is **final** and will be recorded permanently on the decentralized blockchain.
+              </p>
+
+              <div style={{ 
+                background: 'rgba(255, 255, 255, 0.05)', 
+                borderRadius: '16px', 
+                padding: '1.5rem', 
+                border: '1px solid var(--glass-border)',
+                textAlign: 'left' 
+              }}>
+                <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--primary)', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Selected Candidate</span>
+                <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{candidates.find(c => c.id === selectedCandidate)?.name}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>{candidates.find(c => c.id === selectedCandidate)?.party}</div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <button className="btn-secondary" onClick={() => setShowConfirmModal(false)}>
+                  Cancel
+                </button>
+                <button className="btn-primary" onClick={confirmAndCastVote}>
+                  Confirm & Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
+    <>
     <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '2rem auto' }}>
       <h2 style={{ marginBottom: '1.5rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
         <ShieldCheck className="text-gradient" size={28} /> Secure Voting Booth
       </h2>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', textAlign: 'center' }}>
-        Please explicitly verify your Voter ID, Aadhar, and provide a Live Face Scan to access your ballot.
+        Please verify your Voter ID, Aadhar, and provide a Live Face Scan to access your ballot.
       </p>
+
+      {renderProgressPipeline()}
       
       <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -205,20 +571,32 @@ export default function VotingBooth() {
             <input 
               type="text" 
               value={voterId} 
-              onChange={(e) => setVoterId(e.target.value)} 
+              onChange={handleVoterIdChange} 
               placeholder="Your Voter ID"
+              style={{ borderColor: errors.voterId ? 'var(--accent)' : voterId && !errors.voterId ? 'var(--secondary)' : 'var(--glass-border)' }}
               required
             />
+            {errors.voterId && (
+              <span style={{ color: 'var(--accent)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                {errors.voterId}
+              </span>
+            )}
           </div>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Aadhar Number</label>
             <input 
               type="text" 
               value={aadharId} 
-              onChange={(e) => setAadharId(e.target.value)} 
+              onChange={handleAadharIdChange} 
               placeholder="12-digit Aadhar"
+              style={{ borderColor: errors.aadharId ? 'var(--accent)' : aadharId && !errors.aadharId ? 'var(--secondary)' : 'var(--glass-border)' }}
               required
             />
+            {errors.aadharId && (
+              <span style={{ color: 'var(--accent)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                {errors.aadharId}
+              </span>
+            )}
           </div>
         </div>
         
@@ -246,24 +624,42 @@ export default function VotingBooth() {
           </div>
         </div>
         
-        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!voterId || !aadharId || !image}>
+        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!voterId || !aadharId || !image || errors.voterId || errors.aadharId}>
           Authenticate Identity
         </button>
         
-        {authStatus && (
-          <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(255,0,0,0.1)', border: '1px solid var(--accent)', color: 'white', borderRadius: '12px', textAlign: 'center' }}>
-            {authStatus}
+        {authStatus && authStatus.message && (
+          <div style={{ 
+            marginTop: '1.5rem', 
+            padding: '1.25rem', 
+            background: authStatus.type === 'loading' 
+              ? 'rgba(99, 102, 241, 0.1)' 
+              : 'rgba(244, 63, 94, 0.1)', 
+            border: authStatus.type === 'loading' 
+              ? '1px solid var(--primary)' 
+              : '1px solid var(--accent)', 
+            color: 'var(--text-main)', 
+            borderRadius: '16px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.75rem',
+            textAlign: 'left'
+          }}>
+            {authStatus.type === 'loading' && <Loader2 className="animate-spin" size={20} color="var(--primary)" />}
+            {authStatus.type === 'error' && <AlertCircle size={20} color="var(--accent)" />}
+            <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>{authStatus.message}</span>
           </div>
         )}
       </form>
-
-      {/* Fullscreen Camera Modal */}
-      {showCamera && (
-        <WebcamCapture 
-          onCapture={handleCapture} 
-          onClose={() => setShowCamera(false)} 
-        />
-      )}
     </div>
+
+    {/* Fullscreen Camera Modal */}
+    {showCamera && (
+      <WebcamCapture 
+        onCapture={handleCapture} 
+        onClose={() => setShowCamera(false)} 
+      />
+    )}
+    </>
   );
 }

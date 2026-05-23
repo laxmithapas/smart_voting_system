@@ -1,17 +1,42 @@
 from .block import Block
-from time import time
+from pathlib import Path
+import json
 
 class Blockchain:
     def __init__(self):
         self.unconfirmed_transactions = []
         self.chain = []
         self.difficulty = 3
-        self.create_genesis_block()
+        self.storage_path = Path(__file__).resolve().parent.parent / "blockchain_state.json"
+        self._load_chain()
 
     def create_genesis_block(self):
         genesis_block = Block(0, [], "0")
         genesis_block.hash = genesis_block.compute_hash()
         self.chain.append(genesis_block)
+        self._persist_chain()
+
+    def _load_chain(self):
+        if not self.storage_path.exists():
+            self.create_genesis_block()
+            return
+
+        try:
+            data = json.loads(self.storage_path.read_text(encoding="utf-8"))
+            blocks = data.get("chain", [])
+            if not blocks:
+                self.create_genesis_block()
+                return
+            self.chain = [Block.from_dict(block) for block in blocks]
+        except Exception:
+            self.chain = []
+            self.create_genesis_block()
+
+    def _persist_chain(self):
+        payload = {
+            "chain": [block.__dict__ for block in self.chain],
+        }
+        self.storage_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     @property
     def last_block(self):
@@ -25,6 +50,7 @@ class Blockchain:
             return False
         block.hash = proof
         self.chain.append(block)
+        self._persist_chain()
         return True
 
     def is_valid_proof(self, block, block_hash):

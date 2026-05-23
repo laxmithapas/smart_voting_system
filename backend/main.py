@@ -1,49 +1,135 @@
-from fastapi import FastAPI, HTTPException, Depends, Body
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import json
+import re
+import uuid
+import hashlib
+from datetime import datetime, timezone
+from typing import Optional
+import os
 
-from models.schemas import VoteCasting, BlockchainResponse, RegisterRequest, AuthRequest
+from models.schemas import (
+    VoteCasting, BlockchainResponse, RegisterRequest, AuthRequest,
+    CandidateCreate, CandidateResponse, ElectionSettingsUpdate, CandidateUpdate,
+    AdminLoginRequest
+)
 from blockchain.chain import Blockchain
-from auth.face_engine import verify_face, extract_face_encoding
+from auth.face_engine import verify_face, extract_face_encoding, check_liveness
 import uvicorn
 
 # Import database and models
-from database import engine, get_db
+from database import engine, get_db, SessionLocal
 from models import db_models
 
 # Create DB tables
 db_models.Base.metadata.create_all(bind=engine)
 
+
 app = FastAPI(title="Smart Voting System API")
 
 # Setup CORS for frontend
+cors_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 blockchain = Blockchain()
 
-# Hardcoded candidates for prototype
-CANDIDATES = [
+# Hardcoded candidates for seeding database if empty
+CANDIDATES_SEED = [
     {"id": "A", "name": "Alice Smith", "party": "Progressive Party"},
     {"id": "B", "name": "Bob Jones", "party": "Conservative Party"},
     {"id": "C", "name": "Charlie Brown", "party": "Independent"}
 ]
 
+def seed_database():
+    db = SessionLocal()
+    try:
+        if db.query(db_models.Candidate).count() == 0:
+            for c in CANDIDATES_SEED:
+                db.add(db_models.Candidate(id=c["id"], name=c["name"], party=c["party"], is_active=True))
+            db.commit()
+        if db.query(db_models.ElectionSettings).count() == 0:
+            db.add(db_models.ElectionSettings(
+                id="current_election",
+                title="Smart Voting System",
+                is_active=True,
+                start_date=None,
+                end_date=None
+            ))
+            db.commit()
+    finally:
+        db.close()
+
+seed_database()
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Blockchain Smart Voting API"}
 
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+def verify_admin_session(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authentication credentials (session token) missing.")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid token format. Must be Bearer <token>")
+    token = authorization.split(" ")[1]
+    if token != "admin-demo-token-xyz789":
+        raise HTTPException(status_code=401, detail="Invalid or expired admin session token.")
+    return token
+
+
+def anonymize_voter_id(voter_id: str) -> str:
+    return hashlib.sha256(voter_id.encode("utf-8")).hexdigest()
+
+
+@app.post("/admin/login")
+def admin_login(payload: AdminLoginRequest):
+    if payload.username == "admin" and payload.password == "admin123":
+        return {"token": "admin-demo-token-xyz789", "token_type": "bearer"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid administrator credentials.")
+
+
 @app.post("/register")
 async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)):
+    # Input validation
+    if not re.match(r"^[a-zA-Z0-9]{10}$", request.voter_id):
+        raise HTTPException(status_code=400, detail="Voter ID must be a 10-character alphanumeric string.")
+        
+    if not re.match(r"^\d{12}$", request.aadhar_id):
+        raise HTTPException(status_code=400, detail="Aadhar ID must be exactly 12 digits.")
+        
+    if not re.match(r"^[a-zA-Z\s]{3,50}$", request.name):
+        raise HTTPException(status_code=400, detail="Name must be between 3 and 50 characters, containing only letters and spaces.")
+        
+    # Check existing voter ID
     existing_voter = db.query(db_models.Voter).filter(db_models.Voter.voter_id == request.voter_id).first()
     if existing_voter:
         raise HTTPException(status_code=400, detail="Voter ID already registered")
+
+    # Check existing Aadhar ID
+    existing_aadhar = db.query(db_models.Voter).filter(db_models.Voter.aadhar_id == request.aadhar_id).first()
+    if existing_aadhar:
+        raise HTTPException(status_code=400, detail="Aadhar Card Number already registered")
+        
+    # Check liveness
+    liveness_res = check_liveness(request.image)
+    if not liveness_res.get("liveness_detected"):
+        raise HTTPException(status_code=400, detail=f"Liveness check failed: {liveness_res.get('error', 'Anti-spoofing verification failed')}")
         
     encoding = extract_face_encoding(request.image)
     if not encoding:
@@ -52,7 +138,7 @@ async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)
     new_voter = db_models.Voter(
         voter_id=request.voter_id,
         aadhar_id=request.aadhar_id,
-        name=request.name,
+        name=request.name.strip(),
         face_encoding=json.dumps(encoding),
         has_voted=False
     )
@@ -64,14 +150,26 @@ async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)
 
 @app.post("/authenticate")
 async def authenticate_voter(request: AuthRequest, db: Session = Depends(get_db)):
+    # Input validation
+    if not re.match(r"^[a-zA-Z0-9]{10}$", request.voter_id):
+        raise HTTPException(status_code=400, detail="Voter ID must be a 10-character alphanumeric string.")
+        
+    if not re.match(r"^\d{12}$", request.aadhar_id):
+        raise HTTPException(status_code=400, detail="Aadhar ID must be exactly 12 digits.")
+
     voter = db.query(db_models.Voter).filter(db_models.Voter.voter_id == request.voter_id).first()
     if not voter:
-        raise HTTPException(status_code=404, detail="Voter ID not fully registered in system.")
+        raise HTTPException(status_code=404, detail="Voter ID not registered in system.")
         
     # Verify Aadhar
     if voter.aadhar_id != request.aadhar_id:
         raise HTTPException(status_code=401, detail="Invalid Aadhar details provided.")
     
+    # Check liveness
+    liveness_res = check_liveness(request.image)
+    if not liveness_res.get("liveness_detected"):
+        raise HTTPException(status_code=401, detail=f"Liveness check failed: {liveness_res.get('error', 'Anti-spoofing verification failed')}")
+
     # Verify Face
     saved_encoding = json.loads(voter.face_encoding)
     is_match = verify_face(saved_encoding, request.image)
@@ -85,13 +183,50 @@ async def authenticate_voter(request: AuthRequest, db: Session = Depends(get_db)
         "has_voted": voter.has_voted
     }
 
+def parse_iso_datetime(iso_str):
+    if not iso_str:
+        return None
+    try:
+        clean_str = iso_str.strip()
+        if clean_str.endswith("Z"):
+            clean_str = clean_str.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(clean_str)
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+    except Exception:
+        return None
+
 @app.post("/vote")
 async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
     voter_id = vote_data.voter_id
     candidate_id = vote_data.candidate_id
     
+    # Input validation
+    if not re.match(r"^[a-zA-Z0-9]{10}$", voter_id):
+        raise HTTPException(status_code=400, detail="Invalid Voter ID format.")
+        
+    # Check election status
+    settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+    if not settings or not settings.is_active:
+        raise HTTPException(status_code=400, detail="Voting is closed because the election is inactive.")
+        
+    now = datetime.utcnow()
+    if settings.start_date:
+        start_dt = parse_iso_datetime(settings.start_date)
+        if start_dt and now < start_dt:
+            raise HTTPException(status_code=400, detail=f"Voting has not started yet (starts at {settings.start_date}).")
+    if settings.end_date:
+        end_dt = parse_iso_datetime(settings.end_date)
+        if end_dt and now > end_dt:
+            raise HTTPException(status_code=400, detail=f"Voting has ended (closed at {settings.end_date}).")
+
+    # Verify candidate exists and is active
+    candidate = db.query(db_models.Candidate).filter(db_models.Candidate.id == candidate_id).first()
+    if not candidate or not candidate.is_active:
+        raise HTTPException(status_code=400, detail="Invalid or inactive candidate selected.")
+
     voter = db.query(db_models.Voter).filter(db_models.Voter.voter_id == voter_id).first()
-    
     if not voter:
         raise HTTPException(status_code=404, detail="Voter not found. Please register.")
         
@@ -100,7 +235,7 @@ async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
         
     # Create transaction
     transaction = {
-        "voter_id_hash": str(hash(voter_id)), # Anonymize voter id on blockchain
+        "voter_id_hash": anonymize_voter_id(voter_id),
         "candidate_id": candidate_id
     }
     
@@ -111,12 +246,25 @@ async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
     # Mark as voted
     voter.has_voted = True
     db.commit()
+
+    # Calculate transaction hash
+    tx_hash = hashlib.sha256(json.dumps(transaction, sort_keys=True).encode("utf-8")).hexdigest()
     
-    return {"message": "Vote successfully cast and added to blockchain"}
+    return {
+        "message": "Vote successfully cast and added to blockchain",
+        "block_index": blockchain.last_block.index,
+        "block_hash": blockchain.last_block.hash,
+        "timestamp": datetime.fromtimestamp(blockchain.last_block.timestamp).isoformat(),
+        "tx_hash": tx_hash
+    }
 
 @app.get("/candidates")
-def get_candidates():
-    return {"candidates": CANDIDATES}
+def get_candidates(active_only: bool = False, db: Session = Depends(get_db)):
+    query = db.query(db_models.Candidate)
+    if active_only:
+        query = query.filter(db_models.Candidate.is_active == True)
+    candidates = query.all()
+    return {"candidates": [{"id": c.id, "name": c.name, "party": c.party, "is_active": c.is_active} for c in candidates]}
 
 @app.get("/chain", response_model=BlockchainResponse)
 def get_chain():
@@ -126,9 +274,10 @@ def get_chain():
     return {"chain": chain_data, "length": len(chain_data)}
 
 @app.get("/results")
-def get_results():
+def get_results(db: Session = Depends(get_db)):
     # Tally votes from blockchain
-    results = {c["id"]: 0 for c in CANDIDATES}
+    db_candidates = db.query(db_models.Candidate).all()
+    results = {c.id: 0 for c in db_candidates}
     
     for block in blockchain.chain:
         for tx in block.transactions:
@@ -136,7 +285,197 @@ def get_results():
             if cid in results:
                 results[cid] += 1
                 
-    return {"results": results}
+    total_votes = sum(results.values())
+    total_registered = db.query(db_models.Voter).count()
+    turnout_pct = 0.0 if total_registered == 0 else round((total_votes / total_registered) * 100, 2)
+                
+    return {
+        "results": results,
+        "total_votes": total_votes,
+        "total_registered": total_registered,
+        "turnout_percentage": turnout_pct
+    }
+
+@app.get("/election")
+def get_election(db: Session = Depends(get_db)):
+    settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+    if not settings:
+        settings = db_models.ElectionSettings(
+            id="current_election",
+            title="Smart Voting System",
+            is_active=True,
+            start_date=None,
+            end_date=None
+        )
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return {
+        "title": settings.title,
+        "is_active": settings.is_active,
+        "start_date": settings.start_date,
+        "end_date": settings.end_date
+    }
+
+@app.put("/admin/election")
+def update_election(payload: ElectionSettingsUpdate, db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Election settings not found.")
+    settings.title = payload.title
+    settings.is_active = payload.is_active
+    settings.start_date = payload.start_date
+    settings.end_date = payload.end_date
+    db.commit()
+    return {"message": "Election settings updated successfully"}
+
+@app.post("/admin/candidates", response_model=CandidateResponse)
+def add_candidate(payload: CandidateCreate, db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    if not payload.name.strip() or not payload.party.strip():
+        raise HTTPException(status_code=400, detail="Candidate name and party are required.")
+    
+    existing_count = db.query(db_models.Candidate).count()
+    if existing_count < 26:
+        new_id = chr(ord('A') + existing_count)
+        while db.query(db_models.Candidate).filter(db_models.Candidate.id == new_id).first():
+            new_id = uuid.uuid4().hex[:6].upper()
+    else:
+        new_id = uuid.uuid4().hex[:6].upper()
+
+    new_candidate = db_models.Candidate(
+        id=new_id,
+        name=payload.name.strip(),
+        party=payload.party.strip(),
+        is_active=True
+    )
+    db.add(new_candidate)
+    db.commit()
+    db.refresh(new_candidate)
+    return new_candidate
+
+@app.put("/admin/candidates/{candidate_id}", response_model=CandidateResponse)
+def update_candidate(candidate_id: str, payload: CandidateUpdate, db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    candidate = db.query(db_models.Candidate).filter(db_models.Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+    if not payload.name.strip() or not payload.party.strip():
+        raise HTTPException(status_code=400, detail="Candidate name and party are required.")
+    candidate.name = payload.name.strip()
+    candidate.party = payload.party.strip()
+    candidate.is_active = payload.is_active
+    db.commit()
+    db.refresh(candidate)
+    return candidate
+
+@app.delete("/admin/candidates/{candidate_id}")
+def delete_candidate(candidate_id: str, db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    candidate = db.query(db_models.Candidate).filter(db_models.Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+    candidate.is_active = False
+    db.commit()
+    return {"message": f"Candidate {candidate_id} has been deactivated/disabled."}
+
+@app.get("/admin/voters")
+def get_admin_voters(db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    voters = db.query(db_models.Voter).all()
+    return {
+        "voters": [
+            {
+                "voter_id": v.voter_id,
+                "name": v.name,
+                "has_voted": v.has_voted
+            }
+            for v in voters
+        ]
+    }
+
+@app.get("/voter/status/{voter_id}")
+def check_voter_status(voter_id: str, db: Session = Depends(get_db)):
+    if not re.match(r"^[a-zA-Z0-9]{10}$", voter_id):
+        raise HTTPException(status_code=400, detail="Invalid Voter ID format.")
+    
+    voter = db.query(db_models.Voter).filter(db_models.Voter.voter_id == voter_id).first()
+    if not voter:
+        return {
+            "registered": False,
+            "has_voted": False,
+            "name": None,
+            "eligible": False,
+            "status": "Not Registered"
+        }
+    
+    # Mask name for privacy (e.g. "John Doe" -> "J*** D**")
+    name_parts = voter.name.split()
+    masked_parts = []
+    for part in name_parts:
+        if len(part) <= 1:
+            masked_parts.append(part)
+        elif len(part) == 2:
+            masked_parts.append(part[0] + "*")
+        else:
+            masked_parts.append(part[0] + "*" * (len(part) - 2) + part[-1])
+    masked_name = " ".join(masked_parts)
+
+    return {
+        "registered": True,
+        "has_voted": voter.has_voted,
+        "name": masked_name,
+        "eligible": not voter.has_voted,
+        "status": "Already Voted" if voter.has_voted else "Eligible to Vote",
+        "voter_id_hash": anonymize_voter_id(voter_id) if voter.has_voted else None
+    }
+
+@app.get("/audit/summary")
+def get_audit_summary(db: Session = Depends(get_db)):
+    # 1. Basic Stats
+    total_registered = db.query(db_models.Voter).count()
+    
+    # Count votes in blockchain
+    total_votes = 0
+    for block in blockchain.chain:
+        total_votes += len(block.transactions)
+        
+    turnout_pct = 0.0 if total_registered == 0 else round((total_votes / total_registered) * 100, 2)
+    
+    # 2. Blockchain Validity Verification
+    is_valid = True
+    for i in range(1, len(blockchain.chain)):
+        current = blockchain.chain[i]
+        previous = blockchain.chain[i - 1]
+        if current.previous_hash != previous.hash:
+            is_valid = False
+            break
+        if not current.hash.startswith('0' * blockchain.difficulty):
+            is_valid = False
+            break
+        if current.hash != current.compute_hash():
+            is_valid = False
+            break
+            
+    # 3. Compile anonymous records
+    voted_records = []
+    for block in blockchain.chain:
+        for tx in block.transactions:
+            tx_hash = hashlib.sha256(json.dumps(tx, sort_keys=True).encode("utf-8")).hexdigest()
+            voted_records.append({
+                "voter_id_hash": tx.get("voter_id_hash"),
+                "block_index": block.index,
+                "timestamp": datetime.fromtimestamp(block.timestamp).isoformat(),
+                "tx_hash": tx_hash
+            })
+            
+    return {
+        "total_registered": total_registered,
+        "total_votes": total_votes,
+        "turnout_percentage": turnout_pct,
+        "blockchain_length": len(blockchain.chain),
+        "is_chain_valid": is_valid,
+        "voted_records": voted_records
+    }
+
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host=host, port=port, reload=False)

@@ -64,3 +64,39 @@ def verify_face(known_encoding: list, image_base64: str) -> bool:
         # If the user wants real face rec, we need face_recognition installed.
         print("Mock face verification always returning True (Install face_recognition for real auth)")
         return True
+
+def check_liveness(image_base64: str) -> dict:
+    """
+    Checks liveness/anti-spoofing for a face image.
+    Currently acts as a future-ready extension stub for college demonstration.
+    In production, this would use optical flow or eye-blink detection via a temporal CNN/MediaPipe.
+    """
+    if not image_base64 or len(image_base64) < 100:
+        return {"liveness_detected": False, "score": 0.0, "error": "Invalid image data."}
+    
+    try:
+        if "," in image_base64:
+            image_base64_data = image_base64.split(",")[1]
+        else:
+            image_base64_data = image_base64
+            
+        padding = len(image_base64_data) % 4
+        if padding != 0:
+            image_base64_data += "=" * (4 - padding)
+            
+        img_data = base64.b64decode(image_base64_data)
+        nparr = np.frombuffer(img_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return {"liveness_detected": False, "score": 0.0, "error": "Failed to decode image."}
+        
+        # Real integration point: MediaPipe Face Mesh or OpenCV blink detection would process 'img' here.
+        return {
+            "liveness_detected": True,
+            "score": 0.98,
+            "method": "mock_eye_blink_tracker",
+            "details": "Liveness check passed. Decoded successfully."
+        }
+    except Exception as e:
+        return {"liveness_detected": False, "score": 0.0, "error": f"Liveness check failed: {str(e)}"}
+

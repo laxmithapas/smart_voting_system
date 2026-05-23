@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import WebcamCapture from '../components/WebcamCapture';
-import { Fingerprint, CheckCircle, Camera } from 'lucide-react';
+import { Fingerprint, CheckCircle, Camera, Loader2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
+
 
 export default function Register() {
   const [voterId, setVoterId] = useState('');
@@ -9,39 +11,84 @@ export default function Register() {
   const [name, setName] = useState('');
   const [image, setImage] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(null); // { type: 'success'|'error'|'loading', message: '' }
   const [isRegistered, setIsRegistered] = useState(false);
+  
+  const [errors, setErrors] = useState({ voterId: '', aadharId: '', name: '' });
   
   const navigate = useNavigate();
 
+  // Validations
+  const validateVoterId = (val) => {
+    if (!val) return 'Voter ID is required.';
+    if (!/^[a-zA-Z0-9]{10}$/.test(val)) return 'Voter ID must be a 10-character alphanumeric code.';
+    return '';
+  };
+
+  const validateAadharId = (val) => {
+    if (!val) return 'Aadhar Card number is required.';
+    if (!/^\d{12}$/.test(val)) return 'Aadhar Card must be exactly 12 digits.';
+    return '';
+  };
+
+  const validateName = (val) => {
+    if (!val) return 'Full Name is required.';
+    if (val.trim().length < 3) return 'Name must be at least 3 characters.';
+    if (!/^[a-zA-Z\s]+$/.test(val)) return 'Name must contain only letters and spaces.';
+    return '';
+  };
+
+  const handleVoterIdChange = (e) => {
+    const val = e.target.value;
+    setVoterId(val);
+    setErrors(prev => ({ ...prev, voterId: validateVoterId(val) }));
+  };
+
+  const handleAadharIdChange = (e) => {
+    const val = e.target.value;
+    setAadharId(val);
+    setErrors(prev => ({ ...prev, aadharId: validateAadharId(val) }));
+  };
+
+  const handleNameChange = (e) => {
+    const val = e.target.value;
+    setName(val);
+    setErrors(prev => ({ ...prev, name: validateName(val) }));
+  };
+
   const registerUser = async (currentImage) => {
-    if (!voterId || !aadharId || !name || !currentImage) {
-      alert('Please fill all fields and capture a face photo.');
+    const vErr = validateVoterId(voterId);
+    const aErr = validateAadharId(aadharId);
+    const nErr = validateName(name);
+
+    if (vErr || aErr || nErr || !currentImage) {
+      setErrors({ voterId: vErr, aadharId: aErr, name: nErr });
+      setStatus({ type: 'error', message: 'Please correct validation errors and capture a face photo.' });
       return;
     }
     
-    setStatus('Registering... Please wait.');
+    setStatus({ type: 'loading', message: 'Registering biometric credentials... Please wait.' });
     try {
-      const res = await fetch('http://localhost:8000/register', {
+      const res = await fetch(`${API_BASE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           voter_id: voterId, 
           aadhar_id: aadharId,
-          name: name, 
+          name: name.trim(), 
           image: currentImage 
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setStatus(`Success! Voter Registered.`);
+        setStatus({ type: 'success', message: 'Registration successful! Redirecting...' });
         setIsRegistered(true);
       } else {
-        setStatus(`Error: ${data.detail}`);
+        setStatus({ type: 'error', message: data.detail || 'An error occurred during registration.' });
       }
     } catch (err) {
       console.error(err);
-      setStatus('Failed to connect to backend server. Please make sure the backend is running.');
+      setStatus({ type: 'error', message: 'Failed to connect to backend server. Please make sure the backend is running.' });
     }
   };
 
@@ -53,10 +100,12 @@ export default function Register() {
   const handleCapture = (imgBase64) => {
     setImage(imgBase64);
     setShowCamera(false);
-    if (voterId && aadharId && name) {
-      registerUser(imgBase64);
-    }
+    
+    // Clear image error if captured
+    setStatus(null);
   };
+
+  const isFormValid = voterId && aadharId && name && image && !errors.voterId && !errors.aadharId && !errors.name;
 
   if (isRegistered) {
     return (
@@ -78,14 +127,15 @@ export default function Register() {
           </div>
         </div>
 
-        <button onClick={() => navigate('/login')} className="btn-primary" style={{ padding: '1rem 2rem' }}>
-          Return to Dashboard
+        <button onClick={() => navigate('/vote')} className="btn-primary" style={{ padding: '1rem 2rem' }}>
+          Go to Voting Booth
         </button>
       </div>
     );
   }
 
   return (
+    <>
     <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '2rem auto' }}>
       <h2 style={{ marginBottom: '1.5rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
         <Fingerprint className="text-gradient" size={28} /> Voter Registration
@@ -101,20 +151,32 @@ export default function Register() {
             <input 
               type="text" 
               value={voterId} 
-              onChange={(e) => setVoterId(e.target.value)} 
+              onChange={handleVoterIdChange} 
               placeholder="e.g. ABC1234567"
+              style={{ borderColor: errors.voterId ? 'var(--accent)' : voterId && !errors.voterId ? 'var(--secondary)' : 'var(--glass-border)' }}
               required
             />
+            {errors.voterId && (
+              <span style={{ color: 'var(--accent)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                {errors.voterId}
+              </span>
+            )}
           </div>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Aadhar Card Number</label>
             <input 
               type="text" 
               value={aadharId} 
-              onChange={(e) => setAadharId(e.target.value)} 
+              onChange={handleAadharIdChange} 
               placeholder="12-digit Aadhar"
+              style={{ borderColor: errors.aadharId ? 'var(--accent)' : aadharId && !errors.aadharId ? 'var(--secondary)' : 'var(--glass-border)' }}
               required
             />
+            {errors.aadharId && (
+              <span style={{ color: 'var(--accent)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                {errors.aadharId}
+              </span>
+            )}
           </div>
         </div>
 
@@ -123,10 +185,16 @@ export default function Register() {
           <input 
             type="text" 
             value={name} 
-            onChange={(e) => setName(e.target.value)} 
+            onChange={handleNameChange} 
             placeholder="As per legal documents"
+            style={{ borderColor: errors.name ? 'var(--accent)' : name && !errors.name ? 'var(--secondary)' : 'var(--glass-border)' }}
             required
           />
+          {errors.name && (
+            <span style={{ color: 'var(--accent)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+              {errors.name}
+            </span>
+          )}
         </div>
         
         <div>
@@ -153,24 +221,47 @@ export default function Register() {
           </div>
         </div>
         
-        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!voterId || !aadharId || !name || !image}>
+        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!isFormValid}>
           Complete Registration
         </button>
         
-        {status && (
-          <div style={{ marginTop: '1rem', padding: '1.5rem', background: status.includes('Success') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,0,0,0.1)', border: status.includes('Success') ? '1px solid var(--secondary)' : '1px solid var(--accent)', color: status.includes('Success') ? 'var(--secondary)' : 'white', borderRadius: '12px', textAlign: 'center', lineHeight: '1.5' }}>
-            {status}
+        {status && status.message && (
+          <div style={{ 
+            marginTop: '1.5rem', 
+            padding: '1.25rem', 
+            background: status.type === 'success' 
+              ? 'rgba(16, 185, 129, 0.1)' 
+              : status.type === 'error' 
+              ? 'rgba(244, 63, 94, 0.1)' 
+              : 'rgba(99, 102, 241, 0.1)', 
+            border: status.type === 'success' 
+              ? '1px solid var(--secondary)' 
+              : status.type === 'error' 
+              ? '1px solid var(--accent)' 
+              : '1px solid var(--primary)', 
+            color: 'var(--text-main)', 
+            borderRadius: '16px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.75rem',
+            textAlign: 'left'
+          }}>
+            {status.type === 'loading' && <Loader2 className="animate-spin" size={20} color="var(--primary)" />}
+            {status.type === 'success' && <CheckCircle size={20} color="var(--secondary)" />}
+            {status.type === 'error' && <AlertCircle size={20} color="var(--accent)" />}
+            <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>{status.message}</span>
           </div>
         )}
       </form>
-
-      {/* Fullscreen Camera Modal */}
-      {showCamera && (
-        <WebcamCapture 
-          onCapture={handleCapture} 
-          onClose={() => setShowCamera(false)} 
-        />
-      )}
     </div>
+
+    {/* Fullscreen Camera Modal */}
+    {showCamera && (
+      <WebcamCapture 
+        onCapture={handleCapture} 
+        onClose={() => setShowCamera(false)} 
+      />
+    )}
+    </>
   );
 }

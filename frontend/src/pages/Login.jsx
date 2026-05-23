@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -8,16 +9,31 @@ export default function Login() {
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (username === 'admin' && password === 'admin123') {
-      setStatus('Success! Initializing Dashboard...');
-      sessionStorage.setItem('admin_session', 'true');
-      setTimeout(() => {
-        navigate('/home');
-      }, 800);
-    } else {
-      setStatus('Authentication Failed: Invalid credentials');
+    setStatus('Verifying credentials...');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus('Success! Initializing Dashboard...');
+        sessionStorage.setItem('admin_session', data.token);
+        setTimeout(() => {
+          navigate('/admin');
+        }, 800);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setStatus(errData.detail || 'Authentication Failed: Invalid credentials');
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus('Connection error. Is backend API running?');
     }
   };
 
