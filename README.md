@@ -250,4 +250,4 @@ sqlalchemy
 
 # Author
 
-Developed as a Smart Voting System final year project.
+Developed as a Smart Voting System final year project by Laxmi Thapa and Team
