@@ -22,26 +22,30 @@ export default function Home() {
 
   const getStatusDisplay = () => {
     if (!election.is_active) {
-      return { label: 'Voting Closed (Election Inactive)', color: 'var(--accent)' };
+      return { label: election.status_reason || 'Voting Closed (Election Inactive)', color: 'var(--accent)' };
     }
-    const now = new Date();
-    if (election.start_date) {
-      const start = new Date(election.start_date);
-      if (now < start) {
-        return { label: `Scheduled: Starts ${start.toLocaleString()}`, color: 'var(--primary)' };
+    switch (election.effective_status) {
+      case 'inactive':
+        return { label: election.status_reason || 'Voting Closed (Election Inactive)', color: 'var(--accent)' };
+      case 'scheduled': {
+        const start = election.start_date ? new Date(election.start_date) : null;
+        return { 
+          label: start 
+            ? `Scheduled: Starts ${start.toLocaleString()}` 
+            : 'Scheduled to start soon', 
+          color: 'var(--primary)' 
+        };
       }
+      case 'closed':
+        return { label: election.status_reason || 'Voting Closed (Ended)', color: 'var(--accent)' };
+      case 'active':
+      default:
+        return { label: 'Election Active', color: 'var(--secondary)' };
     }
-    if (election.end_date) {
-      const end = new Date(election.end_date);
-      if (now > end) {
-        return { label: 'Voting Closed (Ended)', color: 'var(--accent)' };
-      }
-    }
-    return { label: 'Election Active', color: 'var(--secondary)' };
   };
 
   const status = getStatusDisplay();
-  const isVotingOpen = status.label === 'Election Active';
+  const isVotingOpen = election.is_voting_open ?? (status.label === 'Election Active');
 
   return (
     <div className="home-container animate-fade-in" style={{ gap: '2.5rem' }}>

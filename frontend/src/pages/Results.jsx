@@ -86,13 +86,16 @@ export default function Results() {
             <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{
                 width: '10px', height: '10px', borderRadius: '50%',
-                background: election.is_active ? 'var(--secondary)' : 'var(--accent)',
-                boxShadow: election.is_active ? '0 0 10px var(--secondary)' : '0 0 10px var(--accent)'
+                background: election.is_voting_open ? 'var(--secondary)' : (election.effective_status === 'scheduled' ? 'var(--primary)' : 'var(--accent)'),
+                boxShadow: election.is_voting_open ? '0 0 10px var(--secondary)' : (election.effective_status === 'scheduled' ? '0 0 10px var(--primary)' : '0 0 10px var(--accent)')
               }} />
-              <span style={{ fontWeight: 600, color: election.is_active ? 'var(--secondary)' : 'var(--accent)' }}>
-                {election.is_active ? 'ACTIVE' : 'INACTIVE'}
+              <span style={{ fontWeight: 600, color: election.is_voting_open ? 'var(--secondary)' : (election.effective_status === 'scheduled' ? 'var(--primary)' : 'var(--accent)') }}>
+                {(election.effective_status || (election.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase()}
               </span>
             </div>
+            {election.status_reason && !election.is_voting_open && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: '1.2' }}>{election.status_reason}</div>
+            )}
           </div>
           <div>
             <span style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Scheduled Period</span>

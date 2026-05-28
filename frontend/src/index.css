@@ -284,3 +284,98 @@ input[type="text"]:focus {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Responsive Helper Grids */
+.grid-responsive-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.grid-responsive-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.admin-dashboard-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.booth-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 2fr;
+}
+
+/* Global Mobile Responsiveness Adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem !important;
+  }
+  
+  .glass-panel {
+    padding: 1.5rem 1.25rem !important;
+    border-radius: 18px !important;
+  }
+  
+  .grid-responsive-2col,
+  .grid-responsive-3col,
+  .admin-dashboard-layout,
+  .booth-layout {
+    grid-template-columns: 1fr !important;
+    gap: 1.25rem !important;
+  }
+  
+  body {
+    padding: 0.5rem !important;
+  }
+  
+  /* Scale down hero typography and page headers */
+  .hero-title {
+    font-size: 2.25rem !important;
+  }
+  
+  .hero-subtitle {
+    font-size: 1rem !important;
+  }
+  
+  h1 {
+    font-size: 1.75rem !important;
+  }
+  
+  h2 {
+    font-size: 1.35rem !important;
+  }
+  
+  /* Scale padding and size of inputs on mobile */
+  input[type="text"], input[type="password"] {
+    padding: 0.8rem 1rem !important;
+    font-size: 0.95rem !important;
+    border-radius: 10px !important;
+  }
+  
+  .btn-primary, .btn-secondary {
+    padding: 0.75rem 1.25rem !important;
+    font-size: 0.95rem !important;
+    border-radius: 10px !important;
+  }
+  
+  /* Table layout safety scrolling */
+  table th, table td {
+    padding: 0.6rem !important;
+    font-size: 0.8rem !important;
+  }
+  
+  /* Spacer / layout constraints overrides */
+  div[style*="max-width: 600px"],
+  div[style*="max-width: 500px"],
+  div[style*="max-width: 450px"] {
+    max-width: 100% !important;
+    margin: 1rem auto !important;
+  }
+  
+  /* Pipeline checklist scaling */
+  div[style*="padding: 1rem"] {
+    padding: 0.75rem !important;
+  }
+}
+

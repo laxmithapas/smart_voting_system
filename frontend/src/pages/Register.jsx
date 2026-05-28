@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import WebcamCapture from '../components/WebcamCapture';
-import { Fingerprint, CheckCircle, Camera, Loader2, AlertCircle } from 'lucide-react';
+import { Fingerprint, CheckCircle, Camera, Loader2, AlertCircle, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 
@@ -15,8 +15,23 @@ export default function Register() {
   const [isRegistered, setIsRegistered] = useState(false);
   
   const [errors, setErrors] = useState({ voterId: '', aadharId: '', name: '' });
+  const [electionSettings, setElectionSettings] = useState(null);
+  const [electionLoading, setElectionLoading] = useState(true);
   
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/election`)
+      .then(res => res.json())
+      .then(data => {
+        setElectionSettings(data);
+        setElectionLoading(false);
+      })
+      .catch(err => {
+        console.error("Error loading election settings:", err);
+        setElectionLoading(false);
+      });
+  }, []);
 
   // Validations
   const validateVoterId = (val) => {
@@ -115,7 +130,7 @@ export default function Register() {
         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Your biometric data has been securely saved.</p>
         
         {/* Voter ID Card Display */}
-        <div style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.9) 100%)', borderRadius: '16px', padding: '2rem', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', gap: '2rem', textAlign: 'left', marginBottom: '2rem' }}>
+        <div style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.9) 0%, rgba(15,23,42,0.9) 100%)', borderRadius: '16px', padding: '2rem', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', gap: '1.5rem', flexFlow: 'row wrap', alignItems: 'center', textAlign: 'left', marginBottom: '2rem' }}>
           <div>
             <img src={image} alt="Voter" style={{ width: '120px', height: '160px', objectFit: 'cover', borderRadius: '8px', border: '2px solid var(--secondary)' }} />
           </div>
@@ -134,6 +149,18 @@ export default function Register() {
     );
   }
 
+  const isRegistrationOpen = electionSettings ? electionSettings.is_registration_open : true;
+  const registrationReason = electionSettings ? electionSettings.status_reason : "Registration is currently unavailable.";
+
+  if (electionLoading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
+        <Loader2 className="animate-spin" size={32} color="var(--primary)" />
+        <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Checking election status...</p>
+      </div>
+    );
+  }
+
   return (
     <>
     <div className="glass-panel animate-fade-in" style={{ maxWidth: '600px', margin: '2rem auto' }}>
@@ -144,8 +171,29 @@ export default function Register() {
         Enroll your demographic and biometric data to participate in secure elections.
       </p>
       
+      {!isRegistrationOpen && (
+        <div style={{
+          background: 'rgba(244, 63, 94, 0.1)',
+          border: '1px solid var(--accent)',
+          borderRadius: '16px',
+          padding: '1rem 1.25rem',
+          marginBottom: '2rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          color: 'white',
+          textAlign: 'left'
+        }}>
+          <ShieldAlert size={20} color="var(--accent)" style={{ flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--accent)' }}>Registration Closed</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>{registrationReason}</div>
+          </div>
+        </div>
+      )}
+      
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Voter ID Number</label>
             <input 
@@ -154,6 +202,7 @@ export default function Register() {
               onChange={handleVoterIdChange} 
               placeholder="e.g. ABC1234567"
               style={{ borderColor: errors.voterId ? 'var(--accent)' : voterId && !errors.voterId ? 'var(--secondary)' : 'var(--glass-border)' }}
+              disabled={!isRegistrationOpen}
               required
             />
             {errors.voterId && (
@@ -170,6 +219,7 @@ export default function Register() {
               onChange={handleAadharIdChange} 
               placeholder="12-digit Aadhar"
               style={{ borderColor: errors.aadharId ? 'var(--accent)' : aadharId && !errors.aadharId ? 'var(--secondary)' : 'var(--glass-border)' }}
+              disabled={!isRegistrationOpen}
               required
             />
             {errors.aadharId && (
@@ -188,6 +238,7 @@ export default function Register() {
             onChange={handleNameChange} 
             placeholder="As per legal documents"
             style={{ borderColor: errors.name ? 'var(--accent)' : name && !errors.name ? 'var(--secondary)' : 'var(--glass-border)' }}
+            disabled={!isRegistrationOpen}
             required
           />
           {errors.name && (
@@ -203,7 +254,7 @@ export default function Register() {
             {image ? (
               <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
                 <img src={image} alt="Captured face" style={{ width: '100%', maxWidth: '200px', borderRadius: '12px', border: '3px solid var(--secondary)', boxShadow: '0 8px 24px rgba(16, 185, 129, 0.2)' }} />
-                <button type="button" onClick={() => setShowCamera(true)} className="btn-secondary">
+                <button type="button" onClick={() => setShowCamera(true)} className="btn-secondary" disabled={!isRegistrationOpen}>
                   <Camera size={18} /> Retake Photo
                 </button>
               </div>
@@ -212,7 +263,8 @@ export default function Register() {
                 type="button" 
                 onClick={() => setShowCamera(true)} 
                 className="btn-secondary" 
-                style={{ width: '100%', padding: '2rem', borderStyle: 'dashed', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                style={{ width: '100%', padding: '2rem', borderStyle: 'dashed', borderColor: isRegistrationOpen ? 'var(--primary)' : 'var(--text-muted)', color: isRegistrationOpen ? 'var(--primary)' : 'var(--text-muted)', opacity: isRegistrationOpen ? 1 : 0.5 }}
+                disabled={!isRegistrationOpen}
               >
                 <Camera size={32} style={{ margin: '0 auto 0.5rem auto' }} />
                 Click to Open Face Authenticate Popup
@@ -221,7 +273,7 @@ export default function Register() {
           </div>
         </div>
         
-        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!isFormValid}>
+        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!isFormValid || !isRegistrationOpen}>
           Complete Registration
         </button>
         

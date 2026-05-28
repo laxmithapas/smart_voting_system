@@ -116,6 +116,12 @@ async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)
     if not re.match(r"^[a-zA-Z\s]{3,50}$", request.name):
         raise HTTPException(status_code=400, detail="Name must be between 3 and 50 characters, containing only letters and spaces.")
         
+    # Check election status for registration
+    settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+    status_info = get_election_status_info(settings)
+    if not status_info["is_registration_open"]:
+        raise HTTPException(status_code=400, detail=f"Registration is closed. {status_info['status_reason']}")
+        
     # Check existing voter ID
     existing_voter = db.query(db_models.Voter).filter(db_models.Voter.voter_id == request.voter_id).first()
     if existing_voter:
@@ -197,6 +203,43 @@ def parse_iso_datetime(iso_str):
     except Exception:
         return None
 
+def get_election_status_info(settings, now=None):
+    if now is None:
+        now = datetime.utcnow()
+    
+    effective_status = "active"
+    is_voting_open = True
+    is_registration_open = True
+    status_reason = "The election is active and voting is open."
+    
+    if not settings or not settings.is_active:
+        effective_status = "inactive"
+        is_voting_open = False
+        is_registration_open = False
+        status_reason = "Voting is closed because the election is inactive."
+    else:
+        if settings.start_date:
+            start_dt = parse_iso_datetime(settings.start_date)
+            if start_dt and now < start_dt:
+                effective_status = "scheduled"
+                is_voting_open = False
+                status_reason = f"Voting has not started yet (scheduled to start at {settings.start_date})."
+        if settings.end_date:
+            end_dt = parse_iso_datetime(settings.end_date)
+            if end_dt and now > end_dt:
+                effective_status = "closed"
+                is_voting_open = False
+                is_registration_open = False
+                status_reason = f"Voting has ended (closed at {settings.end_date})."
+                
+    return {
+        "effective_status": effective_status,
+        "is_voting_open": is_voting_open,
+        "is_registration_open": is_registration_open,
+        "status_reason": status_reason,
+        "server_time": now.isoformat() + "Z"
+    }
+
 @app.post("/vote")
 async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
     voter_id = vote_data.voter_id
@@ -208,18 +251,9 @@ async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
         
     # Check election status
     settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
-    if not settings or not settings.is_active:
-        raise HTTPException(status_code=400, detail="Voting is closed because the election is inactive.")
-        
-    now = datetime.utcnow()
-    if settings.start_date:
-        start_dt = parse_iso_datetime(settings.start_date)
-        if start_dt and now < start_dt:
-            raise HTTPException(status_code=400, detail=f"Voting has not started yet (starts at {settings.start_date}).")
-    if settings.end_date:
-        end_dt = parse_iso_datetime(settings.end_date)
-        if end_dt and now > end_dt:
-            raise HTTPException(status_code=400, detail=f"Voting has ended (closed at {settings.end_date}).")
+    status_info = get_election_status_info(settings)
+    if not status_info["is_voting_open"]:
+        raise HTTPException(status_code=400, detail=status_info["status_reason"])
 
     # Verify candidate exists and is active
     candidate = db.query(db_models.Candidate).filter(db_models.Candidate.id == candidate_id).first()
@@ -310,11 +344,17 @@ def get_election(db: Session = Depends(get_db)):
         db.add(settings)
         db.commit()
         db.refresh(settings)
+    status_info = get_election_status_info(settings)
     return {
         "title": settings.title,
         "is_active": settings.is_active,
         "start_date": settings.start_date,
-        "end_date": settings.end_date
+        "end_date": settings.end_date,
+        "effective_status": status_info["effective_status"],
+        "is_voting_open": status_info["is_voting_open"],
+        "is_registration_open": status_info["is_registration_open"],
+        "status_reason": status_info["status_reason"],
+        "server_time": status_info["server_time"]
     }
 
 @app.put("/admin/election")
@@ -322,11 +362,39 @@ def update_election(payload: ElectionSettingsUpdate, db: Session = Depends(get_d
     settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
     if not settings:
         raise HTTPException(status_code=404, detail="Election settings not found.")
+    
+    start_date = payload.start_date.strip() if payload.start_date else None
+    if not start_date:
+        start_date = None
+    end_date = payload.end_date.strip() if payload.end_date else None
+    if not end_date:
+        end_date = None
+        
+    start_dt = None
+    end_dt = None
+    
+    if start_date:
+        start_dt = parse_iso_datetime(start_date)
+        if not start_dt:
+            raise HTTPException(status_code=400, detail=f"Invalid Start Date & Time format: '{payload.start_date}'")
+        start_date = start_dt.isoformat()
+        
+    if end_date:
+        end_dt = parse_iso_datetime(end_date)
+        if not end_dt:
+            raise HTTPException(status_code=400, detail=f"Invalid End Date & Time format: '{payload.end_date}'")
+        end_date = end_dt.isoformat()
+        
+    if start_dt and end_dt:
+        if end_dt < start_dt:
+            raise HTTPException(status_code=400, detail="End date cannot be earlier than start date.")
+            
     settings.title = payload.title
     settings.is_active = payload.is_active
-    settings.start_date = payload.start_date
-    settings.end_date = payload.end_date
+    settings.start_date = start_date
+    settings.end_date = end_date
     db.commit()
+    db.refresh(settings)
     return {"message": "Election settings updated successfully"}
 
 @app.post("/admin/candidates", response_model=CandidateResponse)

@@ -11,6 +11,15 @@ export default function WebcamCapture({ onCapture, onClose }) {
   const [livenessState, setLivenessState] = useState('idle'); // 'idle', 'scanning', 'blinking', 'verified'
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
+  const [crosshairSize, setCrosshairSize] = useState(window.innerWidth < 480 ? 120 : 180);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setCrosshairSize(window.innerWidth < 480 ? 120 : 180);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const clearLivenessTimers = useCallback(() => {
     if (scanTimeoutRef.current) {
@@ -221,7 +230,7 @@ export default function WebcamCapture({ onCapture, onClose }) {
                   <div className="scanner-line"></div>
                   <div className="target-box">
                     <Crosshair
-                      size={180}
+                      size={crosshairSize}
                       color="rgba(99, 102, 241, 0.6)"
                       strokeWidth={1}
                       style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}

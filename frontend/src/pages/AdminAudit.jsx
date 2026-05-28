@@ -117,7 +117,7 @@ export default function AdminAudit() {
       </div>
 
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '2rem', alignItems: 'start' }}>
+      <div className="grid-responsive-2col" style={{ gap: '2rem', alignItems: 'start' }}>
         
         {/* Left Section: Voters Table */}
         <div className="glass-panel" style={{ height: '100%' }}>

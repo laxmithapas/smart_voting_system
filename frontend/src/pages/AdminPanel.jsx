@@ -10,6 +10,9 @@ export default function AdminPanel() {
   const [endDate, setEndDate] = useState('');
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsStatus, setSettingsStatus] = useState(null); // { type: 'success'|'error', message: '' }
+  const [effectiveStatus, setEffectiveStatus] = useState('');
+  const [statusReason, setStatusReason] = useState('');
+  const [serverTime, setServerTime] = useState('');
 
   // Candidate state
   const [candidates, setCandidates] = useState([]);
@@ -40,11 +43,46 @@ export default function AdminPanel() {
         setElectionActive(data.is_active ?? true);
         setStartDate(data.start_date ? data.start_date.slice(0, 16) : '');
         setEndDate(data.end_date ? data.end_date.slice(0, 16) : '');
+        setEffectiveStatus(data.effective_status || '');
+        setStatusReason(data.status_reason || '');
+        setServerTime(data.server_time || '');
       }
     } catch (err) {
       console.error('Error fetching settings:', err);
     } finally {
       setSettingsLoading(false);
+    }
+  };
+
+  const handleQuickAction = async (openNow) => {
+    setSettingsStatus({ type: 'loading', message: 'Executing quick action...' });
+    try {
+      const payload = {
+        title: electionTitle || 'Smart Voting System',
+        is_active: openNow,
+        start_date: null,
+        end_date: null
+      };
+
+      const token = sessionStorage.getItem('admin_session') || '';
+      const res = await fetch(`${API_BASE_URL}/admin/election`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettingsStatus({ type: 'success', message: openNow ? 'Election opened immediately!' : 'Election closed immediately!' });
+        fetchElectionSettings();
+        setTimeout(() => setSettingsStatus(null), 3000);
+      } else {
+        setSettingsStatus({ type: 'error', message: `Error: ${data.detail || 'Failed to execute quick action'}` });
+      }
+    } catch {
+      setSettingsStatus({ type: 'error', message: 'Connection error to backend.' });
     }
   };
 
@@ -179,119 +217,195 @@ export default function AdminPanel() {
   };
 
 
-  return (
-    <div className="admin-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', margin: '1rem 0' }}>
-      <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.5rem' }}>
-        <h1 style={{ fontSize: '2.2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Settings className="text-gradient animate-spin" style={{ animationDuration: '6s' }} size={32} />
-          <span>Election Administration Board</span>
-        </h1>
-        <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-          Configure election metadata, toggle active phases, and manage candidate registry.
-        </p>
-      </div>
+      const getSaveExplanation = () => {
+        if (!electionActive) {
+          return "⚠️ Saving will immediately close the election and block voting/registration.";
+        }
+        const now = new Date();
+        if (startDate) {
+          const start = new Date(startDate);
+          if (start > now) {
+            return `📅 Saving will schedule the election to start in the future (${start.toLocaleString()}).`;
+          }
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          if (end < now) {
+            return "⚠️ Saving will cause the election to be closed immediately since the end date has passed.";
+          }
+          return `⏳ Saving will set the election as active, closing automatically at ${end.toLocaleString()}.`;
+        }
+        return "✅ Saving will make the election active immediately and keep it open indefinitely.";
+      };
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', alignItems: 'start' }}>
-        
-        {/* Section 1: Election settings */}
-        <div className="glass-panel" style={{ height: '100%' }}>
-          <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.4rem' }}>
-            <Settings size={22} color="var(--primary)" /> Election Parameters
-          </h2>
-          
-          {settingsLoading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-              <Loader2 className="animate-spin" size={28} color="var(--primary)" />
-            </div>
-          ) : (
-            <form onSubmit={handleUpdateSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Election Title</label>
-                <input 
-                  type="text" 
-                  value={electionTitle}
-                  onChange={(e) => setElectionTitle(e.target.value)}
-                  placeholder="e.g. 2026 General Election"
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '14px', border: '1px solid var(--glass-border)' }}>
-                <input 
-                  type="checkbox" 
-                  id="electionActive" 
-                  checked={electionActive}
-                  onChange={(e) => setElectionActive(e.target.checked)}
-                  style={{ width: '22px', height: '22px', accentColor: 'var(--secondary)', cursor: 'pointer' }}
-                />
-                <label htmlFor="electionActive" style={{ cursor: 'pointer', fontWeight: 600, display: 'flex', flexDirection: 'column' }}>
-                  <span>Election Status: {electionActive ? <span style={{ color: 'var(--secondary)' }}>Active</span> : <span style={{ color: 'var(--accent)' }}>Inactive</span>}</span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>Uncheck to immediately close/block all voting processes.</span>
-                </label>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
-                    <Calendar size={14} color="var(--primary)" /> Start Date & Time
-                  </label>
-                  <input 
-                    type="datetime-local" 
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(2, 6, 23, 0.6)',
-                      border: '1px solid var(--glass-border)',
-                      color: 'white',
-                      padding: '0.85rem 1rem',
-                      borderRadius: '14px',
-                      fontFamily: 'inherit'
-                    }}
-                  />
+      return (
+        <div className="admin-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', margin: '1rem 0' }}>
+          <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.5rem' }}>
+            <h1 style={{ fontSize: '2.2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <Settings className="text-gradient animate-spin" style={{ animationDuration: '6s' }} size={32} />
+              <span>Election Administration Board</span>
+            </h1>
+            <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Configure election metadata, toggle active phases, and manage candidate registry.
+            </p>
+          </div>
+    
+          <div className="admin-dashboard-layout" style={{ gap: '2rem', alignItems: 'start' }}>
+            
+            {/* Section 1: Election settings */}
+            <div className="glass-panel" style={{ height: '100%' }}>
+              <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.4rem' }}>
+                <Settings size={22} color="var(--primary)" /> Election Parameters
+              </h2>
+              
+              {settingsLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+                  <Loader2 className="animate-spin" size={28} color="var(--primary)" />
                 </div>
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
-                    <Calendar size={14} color="var(--accent)" /> End Date & Time
-                  </label>
-                  <input 
-                    type="datetime-local" 
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(2, 6, 23, 0.6)',
-                      border: '1px solid var(--glass-border)',
-                      color: 'white',
-                      padding: '0.85rem 1rem',
-                      borderRadius: '14px',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* Status Summary Widget */}
+                  <div style={{ 
+                    background: 'rgba(15, 23, 42, 0.4)', 
+                    border: '1px solid var(--glass-border)', 
+                    padding: '1rem', 
+                    borderRadius: '16px', 
+                    marginBottom: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Effective Status:</span>
+                      <span style={{ 
+                        fontWeight: 700, 
+                        fontSize: '0.9rem',
+                        color: effectiveStatus === 'active' ? 'var(--secondary)' : effectiveStatus === 'scheduled' ? 'var(--primary)' : 'var(--accent)'
+                      }}>{effectiveStatus.toUpperCase() || 'UNKNOWN'}</span>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <strong>Reason:</strong> {statusReason || 'No status details available.'}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '0.25rem', paddingTop: '0.25rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span>Server Time (UTC):</span>
+                      <span style={{ fontFamily: 'monospace' }}>{serverTime ? new Date(serverTime).toLocaleTimeString() : 'N/A'}</span>
+                    </div>
+                  </div>
 
-              <button type="submit" className="btn-primary" style={{ padding: '0.85rem', width: '100%', marginTop: '0.5rem' }}>
-                Save Settings
-              </button>
+                  {/* Quick Override Controls */}
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => handleQuickAction(true)} 
+                      className="btn-secondary" 
+                      style={{ flex: 1, padding: '0.6rem 0.5rem', fontSize: '0.85rem', borderColor: 'var(--secondary)', color: 'var(--secondary)', background: 'rgba(16, 185, 129, 0.05)' }}
+                    >
+                      Open Election Now
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => handleQuickAction(false)} 
+                      className="btn-secondary" 
+                      style={{ flex: 1, padding: '0.6rem 0.5rem', fontSize: '0.85rem', borderColor: 'var(--accent)', color: 'var(--accent)', background: 'rgba(244, 63, 94, 0.05)' }}
+                    >
+                      Close Election Now
+                    </button>
+                  </div>
 
-              {settingsStatus && (
-                <div style={{
-                  padding: '0.85rem 1rem',
-                  borderRadius: '12px',
-                  background: settingsStatus.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : settingsStatus.type === 'error' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(99, 102, 241, 0.1)',
-                  border: settingsStatus.type === 'success' ? '1px solid var(--secondary)' : settingsStatus.type === 'error' ? '1px solid var(--accent)' : '1px solid var(--primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem'
-                }}>
-                  {settingsStatus.type === 'loading' && <Loader2 className="animate-spin" size={16} />}
-                  <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{settingsStatus.message}</span>
-                </div>
+                  <form onSubmit={handleUpdateSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Election Title</label>
+                      <input 
+                        type="text" 
+                        value={electionTitle}
+                        onChange={(e) => setElectionTitle(e.target.value)}
+                        placeholder="e.g. 2026 General Election"
+                        required
+                      />
+                    </div>
+      
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '14px', border: '1px solid var(--glass-border)' }}>
+                      <input 
+                        type="checkbox" 
+                        id="electionActive" 
+                        checked={electionActive}
+                        onChange={(e) => setElectionActive(e.target.checked)}
+                        style={{ width: '22px', height: '22px', accentColor: 'var(--secondary)', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="electionActive" style={{ cursor: 'pointer', fontWeight: 600, display: 'flex', flexDirection: 'column' }}>
+                        <span>Election Status: {electionActive ? <span style={{ color: 'var(--secondary)' }}>Active</span> : <span style={{ color: 'var(--accent)' }}>Inactive</span>}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>Uncheck to immediately close/block all voting processes.</span>
+                      </label>
+                    </div>
+      
+                    <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
+                      <div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
+                          <Calendar size={14} color="var(--primary)" /> Start Date & Time
+                        </label>
+                        <input 
+                          type="datetime-local" 
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(2, 6, 23, 0.6)',
+                            border: '1px solid var(--glass-border)',
+                            color: 'white',
+                            padding: '0.85rem 1rem',
+                            borderRadius: '14px',
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
+                          <Calendar size={14} color="var(--accent)" /> End Date & Time
+                        </label>
+                        <input 
+                          type="datetime-local" 
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(2, 6, 23, 0.6)',
+                            border: '1px solid var(--glass-border)',
+                            color: 'white',
+                            padding: '0.85rem 1rem',
+                            borderRadius: '14px',
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                      </div>
+                    </div>
+      
+                    <div>
+                      <button type="submit" className="btn-primary" style={{ padding: '0.85rem', width: '100%', marginTop: '0.5rem' }}>
+                        Save Settings
+                      </button>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem', paddingLeft: '0.25rem' }}>
+                        {getSaveExplanation()}
+                      </div>
+                    </div>
+      
+                    {settingsStatus && (
+                      <div style={{
+                        padding: '0.85rem 1rem',
+                        borderRadius: '12px',
+                        background: settingsStatus.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : settingsStatus.type === 'error' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                        border: settingsStatus.type === 'success' ? '1px solid var(--secondary)' : settingsStatus.type === 'error' ? '1px solid var(--accent)' : '1px solid var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        {settingsStatus.type === 'loading' && <Loader2 className="animate-spin" size={16} />}
+                        <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{settingsStatus.message}</span>
+                      </div>
+                    )}
+                  </form>
+                </>
               )}
-            </form>
-          )}
-        </div>
+            </div>
 
         {/* Section 2: Add Candidate form */}
         <div className="glass-panel" style={{ height: '100%' }}>

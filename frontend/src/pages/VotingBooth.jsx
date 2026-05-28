@@ -253,21 +253,8 @@ export default function VotingBooth() {
 
   const getElectionValidationError = () => {
     if (!electionSettings) return null;
-    if (!electionSettings.is_active) {
-      return "Voting is closed because the election is inactive.";
-    }
-    const now = new Date();
-    if (electionSettings.start_date) {
-      const start = new Date(electionSettings.start_date);
-      if (now < start) {
-        return `Voting has not started yet. (Scheduled start: ${start.toLocaleString()})`;
-      }
-    }
-    if (electionSettings.end_date) {
-      const end = new Date(electionSettings.end_date);
-      if (now > end) {
-        return `Voting has ended. (Closed: ${end.toLocaleString()})`;
-      }
+    if (!electionSettings.is_voting_open) {
+      return electionSettings.status_reason || "Voting is currently closed.";
     }
     return null;
   };
@@ -372,7 +359,7 @@ export default function VotingBooth() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="no-print">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
             <button className="btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
               Print Receipt
             </button>
@@ -421,7 +408,7 @@ export default function VotingBooth() {
 
         {renderProgressPipeline()}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 2fr', gap: '2rem' }}>
+        <div className="booth-layout" style={{ gap: '2rem' }}>
           <div style={{ background: 'rgba(15, 23, 42, 0.4)', borderRadius: '16px', padding: '1.5rem', textAlign: 'center' }}>
             <h3 style={{ marginBottom: '1rem', fontSize: '1rem', color: 'var(--text-muted)' }}>Voter Profile</h3>
             {sessionData.faceImage ? (
@@ -565,7 +552,7 @@ export default function VotingBooth() {
       {renderProgressPipeline()}
       
       <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Voter ID Number</label>
             <input 
