@@ -135,7 +135,7 @@ export default function VoterStatus() {
         </div>
 
         {/* Search input form */}
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '1rem', alignItems: 'stretch' }}>
+        <form onSubmit={handleSearch} className="responsive-search-form">
           <input 
             type="text"
             value={searchQuery}

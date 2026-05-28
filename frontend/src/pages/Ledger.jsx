@@ -94,7 +94,7 @@ export default function Ledger() {
           Input any SHA-256 transaction hash printed on a ballot receipt to verify its presence in a blockchain block and audit its mathematical validation.
         </p>
 
-        <form onSubmit={handleSearchTx} style={{ display: 'flex', gap: '1rem' }}>
+        <form onSubmit={handleSearchTx} className="responsive-search-form">
           <input 
             type="text"
             value={searchQuery}

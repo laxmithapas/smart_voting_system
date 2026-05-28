@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import WebcamCapture from '../components/WebcamCapture';
 import { ShieldCheck, Vote, LogOut, Camera, Loader2, AlertCircle, CheckCircle, Info, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -48,22 +49,8 @@ export default function VotingBooth() {
       .catch(err => console.error("Error fetching candidates:", err));
   }, []);
 
-  useEffect(() => {
-    if (voterId.length === 10 && /^[a-zA-Z0-9]{10}$/.test(voterId)) {
-      fetch(`${API_BASE_URL}/voter/status/${voterId}`)
-        .then(res => {
-          if (res.ok) return res.json();
-          throw new Error("Failed to fetch voter status");
-        })
-        .then(data => {
-          setVoterStatus(data);
-        })
-        .catch(err => {
-          console.error(err);
-          setVoterStatus(null);
-        });
-    }
-  }, [voterId]);
+  // Removing auto-fetch voter status useEffect on ID change for privacy and security.
+  // Voter status check is now deferred until authentication form submission.
 
   const renderProgressPipeline = () => {
     const isRegistered = voterStatus?.registered === true;
@@ -152,15 +139,16 @@ export default function VotingBooth() {
     const val = e.target.value;
     setVoterId(val);
     setErrors(prev => ({ ...prev, voterId: validateVoterId(val) }));
-    if (!/^[a-zA-Z0-9]{10}$/.test(val)) {
-      setVoterStatus(null);
-    }
+    setVoterStatus(null);
+    setAuthStatus(null);
   };
 
   const handleAadharIdChange = (e) => {
     const val = e.target.value;
     setAadharId(val);
     setErrors(prev => ({ ...prev, aadharId: validateAadharId(val) }));
+    setVoterStatus(null);
+    setAuthStatus(null);
   };
 
   const authenticateUser = async (currentImage) => {
@@ -185,6 +173,7 @@ export default function VotingBooth() {
       if (res.ok && data.authenticated) {
         if (data.has_voted) {
           setAuthStatus({ type: 'error', message: "Error: You have already cast your vote!" });
+          setVoterStatus({ registered: true, has_voted: true });
         } else {
           setSessionData({
             voterId,
@@ -192,13 +181,20 @@ export default function VotingBooth() {
             hasVoted: data.has_voted,
             faceImage: currentImage
           });
+          setVoterStatus({ registered: true, has_voted: false });
           setAuthStatus(null);
         }
       } else {
         setAuthStatus({ type: 'error', message: `Authentication Failed: ${data.detail || "Credentials did not match"}` });
+        if (res.status === 404) {
+          setVoterStatus({ registered: false, has_voted: false });
+        } else {
+          setVoterStatus(null);
+        }
       }
     } catch {
       setAuthStatus({ type: 'error', message: "Error connecting to auth server. Is the backend running?" });
+      setVoterStatus(null);
     }
   };
 
@@ -494,15 +490,16 @@ export default function VotingBooth() {
         </div>
 
         {/* Vote confirmation Modal */}
-        {showConfirmModal && (
+        {showConfirmModal && createPortal(
           <div style={{
             position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
             backgroundColor: 'rgba(2, 6, 23, 0.9)', backdropFilter: 'blur(8px)',
-            display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999
+            display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999,
+            padding: '1rem', overflowY: 'auto'
           }}>
             <div className="glass-panel animate-fade-in" style={{ 
               width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', 
-              gap: '1.5rem', textAlign: 'center', position: 'relative' 
+              gap: '1.5rem', textAlign: 'center', position: 'relative', margin: 'auto' 
             }}>
               <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 <Vote size={24} className="text-gradient" /> Confirm Your Ballot
@@ -533,7 +530,8 @@ export default function VotingBooth() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     );

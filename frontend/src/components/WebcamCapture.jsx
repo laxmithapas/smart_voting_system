@@ -233,7 +233,6 @@ export default function WebcamCapture({ onCapture, onClose }) {
                       size={crosshairSize}
                       color="rgba(99, 102, 241, 0.6)"
                       strokeWidth={1}
-                      style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
                     />
                   </div>
                 </div>
