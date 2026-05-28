@@ -273,8 +273,14 @@ export default function Register() {
           </div>
         </div>
         
-        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!isFormValid || !isRegistrationOpen}>
-          Complete Registration
+        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!isFormValid || !isRegistrationOpen || status?.type === 'loading'}>
+          {status?.type === 'loading' ? (
+            <>
+              <Loader2 className="animate-spin" size={18} /> Registering...
+            </>
+          ) : (
+            'Complete Registration'
+          )}
         </button>
         
         {status && status.message && (

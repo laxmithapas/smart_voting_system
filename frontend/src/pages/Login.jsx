@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheck, LogIn } from 'lucide-react';
+import { ShieldCheck, LogIn, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 
@@ -7,10 +7,12 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setLoading(true);
     setStatus('Verifying credentials...');
     try {
       const res = await fetch(`${API_BASE_URL}/admin/login`, {
@@ -30,10 +32,12 @@ export default function Login() {
       } else {
         const errData = await res.json().catch(() => ({}));
         setStatus(errData.detail || 'Authentication Failed: Invalid credentials');
+        setLoading(false);
       }
     } catch (error) {
       console.error(error);
       setStatus('Connection error. Is backend API running?');
+      setLoading(false);
     }
   };
 
@@ -70,8 +74,16 @@ export default function Login() {
             />
           </div>
           
-          <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem', padding: '1rem', width: '100%' }}>
-            <LogIn size={20} /> Access Dashboard
+          <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem', padding: '1rem', width: '100%' }} disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin" size={20} /> Verifying...
+              </>
+            ) : (
+              <>
+                <LogIn size={20} /> Access Dashboard
+              </>
+            )}
           </button>
           
           {status && (

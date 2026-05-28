@@ -105,7 +105,7 @@ def admin_login(payload: AdminLoginRequest):
 
 
 @app.post("/register")
-async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)):
+def register_voter(request: RegisterRequest, db: Session = Depends(get_db)):
     # Input validation
     if not re.match(r"^[a-zA-Z0-9]{10}$", request.voter_id):
         raise HTTPException(status_code=400, detail="Voter ID must be a 10-character alphanumeric string.")
@@ -155,7 +155,7 @@ async def register_voter(request: RegisterRequest, db: Session = Depends(get_db)
     return {"message": "Voter registered successfully", "voter_id": new_voter.voter_id}
 
 @app.post("/authenticate")
-async def authenticate_voter(request: AuthRequest, db: Session = Depends(get_db)):
+def authenticate_voter(request: AuthRequest, db: Session = Depends(get_db)):
     # Input validation
     if not re.match(r"^[a-zA-Z0-9]{10}$", request.voter_id):
         raise HTTPException(status_code=400, detail="Voter ID must be a 10-character alphanumeric string.")
@@ -241,7 +241,7 @@ def get_election_status_info(settings, now=None):
     }
 
 @app.post("/vote")
-async def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
+def cast_vote(vote_data: VoteCasting, db: Session = Depends(get_db)):
     voter_id = vote_data.voter_id
     candidate_id = vote_data.candidate_id
     

@@ -438,13 +438,14 @@ export default function VotingBooth() {
                 <form onSubmit={handleVoteSubmit}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
                     {candidates.map(c => (
-                      <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '12px', cursor: 'pointer', border: selectedCandidate === c.id ? '2px solid var(--primary)' : '2px solid transparent', transition: 'all 0.2s' }}>
+                      <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '12px', cursor: voteStatus?.type === 'loading' ? 'not-allowed' : 'pointer', border: selectedCandidate === c.id ? '2px solid var(--primary)' : '2px solid transparent', transition: 'all 0.2s', opacity: voteStatus?.type === 'loading' ? 0.6 : 1 }}>
                         <input 
                           type="radio" 
                           name="candidate" 
                           value={c.id} 
                           onChange={(e) => setSelectedCandidate(e.target.value)}
-                          style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                          disabled={voteStatus?.type === 'loading'}
+                          style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: voteStatus?.type === 'loading' ? 'not-allowed' : 'pointer' }}
                         />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>{c.name}</div>
@@ -453,8 +454,16 @@ export default function VotingBooth() {
                       </label>
                     ))}
                   </div>
-                  <button type="submit" className="btn-primary" style={{ width: '100%', padding: '1rem' }} disabled={!selectedCandidate}>
-                    Submit Secure Vote <Vote size={20} />
+                  <button type="submit" className="btn-primary" style={{ width: '100%', padding: '1rem' }} disabled={!selectedCandidate || voteStatus?.type === 'loading'}>
+                    {voteStatus?.type === 'loading' ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} /> Casting Vote...
+                      </>
+                    ) : (
+                      <>
+                        Submit Secure Vote <Vote size={20} />
+                      </>
+                    )}
                   </button>
                   {voteStatus && voteStatus.message && (
                     <div style={{ 
@@ -491,16 +500,8 @@ export default function VotingBooth() {
 
         {/* Vote confirmation Modal */}
         {showConfirmModal && createPortal(
-          <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
-            backgroundColor: 'rgba(2, 6, 23, 0.9)', backdropFilter: 'blur(8px)',
-            display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999,
-            padding: '1rem', overflowY: 'auto'
-          }}>
-            <div className="glass-panel animate-fade-in" style={{ 
-              width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', 
-              gap: '1.5rem', textAlign: 'center', position: 'relative', margin: 'auto' 
-            }}>
+          <div className="modal-overlay">
+            <div className="glass-panel modal-content animate-fade-in">
               <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 <Vote size={24} className="text-gradient" /> Confirm Your Ballot
               </h3>
@@ -521,7 +522,7 @@ export default function VotingBooth() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>{candidates.find(c => c.id === selectedCandidate)?.party}</div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="modal-actions">
                 <button className="btn-secondary" onClick={() => setShowConfirmModal(false)}>
                   Cancel
                 </button>
@@ -609,8 +610,14 @@ export default function VotingBooth() {
           </div>
         </div>
         
-        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!voterId || !aadharId || !image || errors.voterId || errors.aadharId}>
-          Authenticate Identity
+        <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '1rem', width: '100%' }} disabled={!voterId || !aadharId || !image || errors.voterId || errors.aadharId || authStatus?.type === 'loading'}>
+          {authStatus?.type === 'loading' ? (
+            <>
+              <Loader2 className="animate-spin" size={18} /> Authenticating...
+            </>
+          ) : (
+            'Authenticate Identity'
+          )}
         </button>
         
         {authStatus && authStatus.message && (
