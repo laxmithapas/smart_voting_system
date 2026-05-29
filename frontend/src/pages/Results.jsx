@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Clock, CheckCircle, Trophy, BarChart3, Users, Loader2 } from 'lucide-react';
+import { Database, Clock, CheckCircle, Trophy, BarChart3, Users, Loader2, Lock, Eye, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 export default function Results() {
@@ -8,6 +8,8 @@ export default function Results() {
   const [stats, setStats] = useState({ totalVotes: 0, totalRegistered: 0, turnoutPercentage: 0 });
   const [election, setElection] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [resultsReleased, setResultsReleased] = useState(false);
+  const isAdmin = !!sessionStorage.getItem('admin_session');
 
   useEffect(() => {
     // Fetch candidates
@@ -27,8 +29,13 @@ export default function Results() {
       
     // Fetch results
     const fetchStats = () => {
-      fetch(`${API_BASE_URL}/results`)
-
+      const token = sessionStorage.getItem('admin_session') || '';
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      fetch(`${API_BASE_URL}/results`, { headers })
         .then(res => res.json())
         .then(data => {
           setResults(data.results || {});
@@ -37,6 +44,7 @@ export default function Results() {
             totalRegistered: data.total_registered || 0,
             turnoutPercentage: data.turnout_percentage || 0
           });
+          setResultsReleased(data.results_released ?? false);
         })
         .catch(err => console.error(err));
     };
@@ -162,8 +170,46 @@ export default function Results() {
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
             No candidates registered in this election yet.
           </div>
+        ) : !resultsReleased && !isAdmin ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '3.5rem 2rem', 
+            color: 'var(--text-muted)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1rem',
+            background: 'rgba(255, 255, 255, 0.01)',
+            borderRadius: '16px',
+            border: '1px dashed var(--glass-border)'
+          }}>
+            <Lock size={48} color="var(--accent)" style={{ opacity: 0.8, marginBottom: '0.5rem' }} />
+            <h4 style={{ color: 'white', fontSize: '1.25rem', fontWeight: 600 }}>Results Locked</h4>
+            <p style={{ maxWidth: '450px', fontSize: '0.95rem', lineHeight: '1.5' }}>
+              Results are currently locked and will be published by the election administrator.
+            </p>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {!resultsReleased && isAdmin && (
+              <div style={{
+                background: 'rgba(234, 179, 8, 0.08)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                padding: '1rem 1.25rem',
+                borderRadius: '14px',
+                color: '#fef08a',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                fontSize: '0.9rem',
+                marginBottom: '0.5rem'
+              }}>
+                <Eye size={20} />
+                <div>
+                  <strong>Admin Preview Mode:</strong> These results are currently hidden from the public and will only be visible once you check <strong>Release Election Results</strong> in the administration settings.
+                </div>
+              </div>
+            )}
             {candidates.map(c => {
               const votes = results[c.id] || 0;
               const percentage = stats.totalVotes === 0 ? 0 : Math.round((votes / stats.totalVotes) * 100);

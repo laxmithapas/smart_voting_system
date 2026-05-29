@@ -44,6 +44,7 @@ class ElectionSettingsUpdate(BaseModel):
     is_active: bool
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    results_released: Optional[bool] = False
 
 class AdminLoginRequest(BaseModel):
     username: str

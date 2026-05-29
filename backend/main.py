@@ -50,6 +50,25 @@ CANDIDATES_SEED = [
     {"id": "C", "name": "Charlie Brown", "party": "Independent"}
 ]
 
+def check_and_migrate_db():
+    db = SessionLocal()
+    try:
+        from sqlalchemy import text
+        # Check if results_released column exists in election_settings
+        try:
+            db.execute(text("SELECT results_released FROM election_settings LIMIT 1"))
+        except Exception:
+            db.rollback()
+            db.execute(text("ALTER TABLE election_settings ADD COLUMN results_released BOOLEAN DEFAULT 0"))
+            db.commit()
+            print("Successfully migrated database: added results_released column to election_settings.")
+    except Exception as e:
+        print(f"Migration error: {str(e)}")
+    finally:
+        db.close()
+
+check_and_migrate_db()
+
 def seed_database():
     db = SessionLocal()
     try:
@@ -63,7 +82,8 @@ def seed_database():
                 title="Smart Voting System",
                 is_active=True,
                 start_date=None,
-                end_date=None
+                end_date=None,
+                results_released=False
             ))
             db.commit()
     finally:
@@ -308,7 +328,16 @@ def get_chain():
     return {"chain": chain_data, "length": len(chain_data)}
 
 @app.get("/results")
-def get_results(db: Session = Depends(get_db)):
+def get_results(db: Session = Depends(get_db), authorization: Optional[str] = Header(None)):
+    settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+    results_released = getattr(settings, "results_released", False) if settings else False
+    
+    is_admin = False
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        if token == "admin-demo-token-xyz789":
+            is_admin = True
+
     # Tally votes from blockchain
     db_candidates = db.query(db_models.Candidate).all()
     results = {c.id: 0 for c in db_candidates}
@@ -323,11 +352,17 @@ def get_results(db: Session = Depends(get_db)):
     total_registered = db.query(db_models.Voter).count()
     turnout_pct = 0.0 if total_registered == 0 else round((total_votes / total_registered) * 100, 2)
                 
+    # Hide actual results if not released and user is not admin
+    public_results = results
+    if not results_released and not is_admin:
+        public_results = {c.id: 0 for c in db_candidates}
+
     return {
-        "results": results,
+        "results": public_results,
         "total_votes": total_votes,
         "total_registered": total_registered,
-        "turnout_percentage": turnout_pct
+        "turnout_percentage": turnout_pct,
+        "results_released": results_released
     }
 
 @app.get("/election")
@@ -339,7 +374,8 @@ def get_election(db: Session = Depends(get_db)):
             title="Smart Voting System",
             is_active=True,
             start_date=None,
-            end_date=None
+            end_date=None,
+            results_released=False
         )
         db.add(settings)
         db.commit()
@@ -350,6 +386,7 @@ def get_election(db: Session = Depends(get_db)):
         "is_active": settings.is_active,
         "start_date": settings.start_date,
         "end_date": settings.end_date,
+        "results_released": getattr(settings, "results_released", False),
         "effective_status": status_info["effective_status"],
         "is_voting_open": status_info["is_voting_open"],
         "is_registration_open": status_info["is_registration_open"],
@@ -393,6 +430,7 @@ def update_election(payload: ElectionSettingsUpdate, db: Session = Depends(get_d
     settings.is_active = payload.is_active
     settings.start_date = start_date
     settings.end_date = end_date
+    settings.results_released = payload.results_released
     db.commit()
     db.refresh(settings)
     return {"message": "Election settings updated successfully"}
@@ -447,6 +485,7 @@ def delete_candidate(candidate_id: str, db: Session = Depends(get_db), token: st
 @app.get("/admin/voters")
 def get_admin_voters(db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
     voters = db.query(db_models.Voter).all()
+    # Mask names and details for standard compliance, omitting direct vote records
     return {
         "voters": [
             {
@@ -457,6 +496,78 @@ def get_admin_voters(db: Session = Depends(get_db), token: str = Depends(verify_
             for v in voters
         ]
     }
+
+@app.post("/admin/demo-data")
+def load_demo_data(db: Session = Depends(get_db), token: str = Depends(verify_admin_session)):
+    try:
+        # 1. Clear database
+        db.query(db_models.Voter).delete()
+        db.query(db_models.Candidate).delete()
+        
+        # 2. Reset blockchain
+        global blockchain
+        blockchain.chain = []
+        blockchain.unconfirmed_transactions = []
+        blockchain.create_genesis_block()
+        
+        # 3. Seed Candidates (4 candidates)
+        demo_candidates = [
+            db_models.Candidate(id="A", name="Elizabeth Warren", party="Democratic Party", is_active=True),
+            db_models.Candidate(id="B", name="Mitt Romney", party="Republican Party", is_active=True),
+            db_models.Candidate(id="C", name="Bernie Sanders", party="Independent Coalition", is_active=True),
+            db_models.Candidate(id="D", name="Jill Stein", party="Green Party", is_active=True)
+        ]
+        for c in demo_candidates:
+            db.add(c)
+        db.commit()
+        
+        # 4. Seed Voters (15 voters)
+        demo_voters_raw = [
+            ("VT1001ABCD", "999911110001", "John Doe", False),
+            ("VT1002EFGH", "999911110002", "Jane Smith", True, "A"),
+            ("VT1003IJKL", "999911110003", "Robert Johnson", True, "A"),
+            ("VT1004MNOP", "999911110004", "Emily Davis", True, "B"),
+            ("VT1005QRST", "999911110005", "Michael Brown", True, "B"),
+            ("VT1006UVWX", "999911110006", "Sarah Miller", True, "C"),
+            ("VT1007YZAB", "999911110007", "David Wilson", True, "C"),
+            ("VT1008CDEF", "999911110008", "Jessica Moore", True, "C"),
+            ("VT1009GHIJ", "999911110009", "James Taylor", True, "D"),
+            ("VT1010KLMN", "999911110010", "Mary Thomas", True, "A"),
+            ("VT1011OPQR", "999911110011", "William Jackson", False),
+            ("VT1012STUV", "999911110012", "Patricia White", False),
+            ("VT1013WXYZ", "999911110013", "Charles Harris", False),
+            ("VT1014ABCD", "999911110014", "Linda Martin", False),
+            ("VT1015EFGH", "999911110015", "Thomas Thompson", False)
+        ]
+        
+        mock_encoding = [0.0] * 128
+        
+        for item in demo_voters_raw:
+            v_id, a_id, name, has_voted = item[0], item[1], item[2], item[3]
+            voter = db_models.Voter(
+                voter_id=v_id,
+                aadhar_id=a_id,
+                name=name,
+                face_encoding=json.dumps(mock_encoding),
+                has_voted=has_voted
+            )
+            db.add(voter)
+            
+            # If voter has voted, mine their transaction
+            if has_voted and len(item) > 4:
+                candidate_id = item[4]
+                transaction = {
+                    "voter_id_hash": hashlib.sha256(v_id.encode("utf-8")).hexdigest(),
+                    "candidate_id": candidate_id
+                }
+                blockchain.add_new_transaction(transaction)
+                blockchain.mine()
+                
+        db.commit()
+        return {"message": "Demo dummy data loaded successfully."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to seed demo data: {str(e)}")
 
 @app.get("/voter/status/{voter_id}")
 def check_voter_status(voter_id: str, db: Session = Depends(get_db)):

@@ -26,4 +26,5 @@ class ElectionSettings(Base):
     is_active = Column(Boolean, default=True)
     start_date = Column(String, nullable=True) # Optional start ISO date/time
     end_date = Column(String, nullable=True)   # Optional end ISO date/time
+    results_released = Column(Boolean, default=False)
 

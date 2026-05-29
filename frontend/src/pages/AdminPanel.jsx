@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Users, Plus, Edit2, Trash2, Check, X, ShieldAlert, Calendar, Loader2 } from 'lucide-react';
+import { Settings, Users, Plus, Edit2, Trash2, Check, X, ShieldAlert, Calendar, Loader2, Database } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 export default function AdminPanel() {
@@ -8,11 +8,15 @@ export default function AdminPanel() {
   const [electionActive, setElectionActive] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [resultsReleased, setResultsReleased] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsStatus, setSettingsStatus] = useState(null); // { type: 'success'|'error', message: '' }
   const [effectiveStatus, setEffectiveStatus] = useState('');
   const [statusReason, setStatusReason] = useState('');
   const [serverTime, setServerTime] = useState('');
+
+  // Demo seeding state
+  const [demoStatus, setDemoStatus] = useState(null); // { type: 'success'|'error'|'loading', message: '' }
 
   // Candidate state
   const [candidates, setCandidates] = useState([]);
@@ -43,6 +47,7 @@ export default function AdminPanel() {
         setElectionActive(data.is_active ?? true);
         setStartDate(data.start_date ? data.start_date.slice(0, 16) : '');
         setEndDate(data.end_date ? data.end_date.slice(0, 16) : '');
+        setResultsReleased(data.results_released ?? false);
         setEffectiveStatus(data.effective_status || '');
         setStatusReason(data.status_reason || '');
         setServerTime(data.server_time || '');
@@ -61,7 +66,8 @@ export default function AdminPanel() {
         title: electionTitle || 'Smart Voting System',
         is_active: openNow,
         start_date: null,
-        end_date: null
+        end_date: null,
+        results_released: resultsReleased
       };
 
       const token = sessionStorage.getItem('admin_session') || '';
@@ -101,6 +107,33 @@ export default function AdminPanel() {
     }
   };
 
+  const handleLoadDemoData = async () => {
+    if (!confirm('Are you sure you want to load demo dummy data? This will clear all existing voters, candidates, and blockchain blocks, seeding standard mock records instead.')) {
+      return;
+    }
+    setDemoStatus({ type: 'loading', message: 'Loading demo dummy data...' });
+    try {
+      const token = sessionStorage.getItem('admin_session') || '';
+      const res = await fetch(`${API_BASE_URL}/admin/demo-data`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDemoStatus({ type: 'success', message: 'Demo dummy data loaded successfully!' });
+        fetchElectionSettings();
+        fetchCandidates();
+        setTimeout(() => setDemoStatus(null), 3000);
+      } else {
+        setDemoStatus({ type: 'error', message: `Error: ${data.detail || 'Could not load demo data'}` });
+      }
+    } catch {
+      setDemoStatus({ type: 'error', message: 'Connection error to backend.' });
+    }
+  };
+
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
     setSettingsStatus({ type: 'loading', message: 'Saving settings...' });
@@ -109,7 +142,8 @@ export default function AdminPanel() {
         title: electionTitle,
         is_active: electionActive,
         start_date: startDate ? new Date(startDate).toISOString() : null,
-        end_date: endDate ? new Date(endDate).toISOString() : null
+        end_date: endDate ? new Date(endDate).toISOString() : null,
+        results_released: resultsReleased
       };
 
       const token = sessionStorage.getItem('admin_session') || '';
@@ -337,6 +371,20 @@ export default function AdminPanel() {
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>Uncheck to immediately close/block all voting processes.</span>
                       </label>
                     </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '14px', border: '1px solid var(--glass-border)' }}>
+                      <input 
+                        type="checkbox" 
+                        id="resultsReleased" 
+                        checked={resultsReleased}
+                        onChange={(e) => setResultsReleased(e.target.checked)}
+                        style={{ width: '22px', height: '22px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="resultsReleased" style={{ cursor: 'pointer', fontWeight: 600, display: 'flex', flexDirection: 'column' }}>
+                        <span>Release Election Results: {resultsReleased ? <span style={{ color: 'var(--primary)' }}>Released</span> : <span style={{ color: 'var(--accent)' }}>Locked / Private</span>}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>Check to publish final standings and election winner to the public results portal.</span>
+                      </label>
+                    </div>
       
                     <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
                       <div>
@@ -407,53 +455,96 @@ export default function AdminPanel() {
               )}
             </div>
 
-        {/* Section 2: Add Candidate form */}
-        <div className="glass-panel" style={{ height: '100%' }}>
-          <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.4rem' }}>
-            <Users size={22} color="#c084fc" /> Register Candidate
-          </h2>
-          <form onSubmit={handleAddCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Candidate Name</label>
-              <input 
-                type="text" 
-                value={newCandName}
-                onChange={(e) => setNewCandName(e.target.value)}
-                placeholder="Full Name"
-                required
-              />
-            </div>
+        {/* Right Column: Register Candidate & Demo Seeding */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
+          {/* Section 2: Add Candidate form */}
+          <div className="glass-panel" style={{ height: 'auto', margin: 0 }}>
+            <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.4rem' }}>
+              <Users size={22} color="#c084fc" /> Register Candidate
+            </h2>
+            <form onSubmit={handleAddCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Candidate Name</label>
+                <input 
+                  type="text" 
+                  value={newCandName}
+                  onChange={(e) => setNewCandName(e.target.value)}
+                  placeholder="Full Name"
+                  required
+                />
+              </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Political Party</label>
-              <input 
-                type="text" 
-                value={newCandParty}
-                onChange={(e) => setNewCandParty(e.target.value)}
-                placeholder="Party Name/Affiliation"
-                required
-              />
-            </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Political Party</label>
+                <input 
+                  type="text" 
+                  value={newCandParty}
+                  onChange={(e) => setNewCandParty(e.target.value)}
+                  placeholder="Party Name/Affiliation"
+                  required
+                />
+              </div>
 
-            <button type="submit" className="btn-primary" style={{ padding: '0.85rem', width: '100%', marginTop: '0.5rem' }}>
-              <Plus size={18} /> Add Candidate
+              <button type="submit" className="btn-primary" style={{ padding: '0.85rem', width: '100%', marginTop: '0.5rem' }}>
+                <Plus size={18} /> Add Candidate
+              </button>
+
+              {candidateStatus && (
+                <div style={{
+                  padding: '0.85rem 1rem',
+                  borderRadius: '12px',
+                  background: candidateStatus.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : candidateStatus.type === 'error' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                  border: candidateStatus.type === 'success' ? '1px solid var(--secondary)' : candidateStatus.type === 'error' ? '1px solid var(--accent)' : '1px solid var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  {candidateStatus.type === 'loading' && <Loader2 className="animate-spin" size={16} />}
+                  <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{candidateStatus.message}</span>
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* Section 4: Demo Seeding Tools */}
+          <div className="glass-panel animate-fade-in" style={{ height: 'auto', margin: 0, border: '1px dashed rgba(99, 102, 241, 0.4)' }}>
+            <h2 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.4rem' }}>
+              <Database size={22} color="var(--primary)" /> Demo & Presentation Tools
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem', lineHeight: '1.4' }}>
+              For presentation and evaluation purposes, seed the system with standard mock candidates, voters, and mined blockchain receipts.
+            </p>
+            
+            <button 
+              type="button" 
+              onClick={handleLoadDemoData}
+              className="btn-primary" 
+              style={{ 
+                padding: '0.85rem', 
+                width: '100%', 
+                background: 'linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%)',
+                borderColor: '#4f46e5'
+              }}
+            >
+              <Database size={18} /> Load Demo Dummy Data
             </button>
 
-            {candidateStatus && (
+            {demoStatus && (
               <div style={{
                 padding: '0.85rem 1rem',
                 borderRadius: '12px',
-                background: candidateStatus.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : candidateStatus.type === 'error' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(99, 102, 241, 0.1)',
-                border: candidateStatus.type === 'success' ? '1px solid var(--secondary)' : candidateStatus.type === 'error' ? '1px solid var(--accent)' : '1px solid var(--primary)',
+                marginTop: '1rem',
+                background: demoStatus.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : demoStatus.type === 'error' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                border: demoStatus.type === 'success' ? '1px solid var(--secondary)' : demoStatus.type === 'error' ? '1px solid var(--accent)' : '1px solid var(--primary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem'
               }}>
-                {candidateStatus.type === 'loading' && <Loader2 className="animate-spin" size={16} />}
-                <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{candidateStatus.message}</span>
+                {demoStatus.type === 'loading' && <Loader2 className="animate-spin" size={16} />}
+                <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{demoStatus.message}</span>
               </div>
             )}
-          </form>
+          </div>
         </div>
 
       </div>
