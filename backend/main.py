@@ -504,6 +504,15 @@ def load_demo_data(db: Session = Depends(get_db), token: str = Depends(verify_ad
         db.query(db_models.Voter).delete()
         db.query(db_models.Candidate).delete()
         
+        # Reset settings to default
+        settings = db.query(db_models.ElectionSettings).filter(db_models.ElectionSettings.id == "current_election").first()
+        if settings:
+            settings.results_released = False
+            settings.is_active = True
+            settings.start_date = None
+            settings.end_date = None
+        db.commit()
+        
         # 2. Reset blockchain
         global blockchain
         blockchain.chain = []

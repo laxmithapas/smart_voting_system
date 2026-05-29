@@ -31,6 +31,22 @@ export default function AdminPanel() {
   const [editParty, setEditParty] = useState('');
   const [editActive, setEditActive] = useState(true);
 
+  // Helper to determine if a datetime input has clearable content
+  const isInputClearable = (id, value) => {
+    if (value) return true;
+    const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
+    return el ? (!!el.value || !!el.validity?.badInput) : false;
+  };
+
+  // Helper to completely purge native date input states
+  const handleClearDate = (id, setter) => {
+    setter('');
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = '';
+    }
+  };
+
   // Fetch initial data
   useEffect(() => {
     fetchElectionSettings();
@@ -136,6 +152,29 @@ export default function AdminPanel() {
 
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
+
+    // Validate inputs for incomplete or invalid dates
+    const startInput = document.getElementById('startDateInput');
+    const endInput = document.getElementById('endDateInput');
+    if (startInput && !startInput.validity.valid) {
+      setSettingsStatus({ type: 'error', message: 'Start Date & Time is incomplete or invalid.' });
+      return;
+    }
+    if (endInput && !endInput.validity.valid) {
+      setSettingsStatus({ type: 'error', message: 'End Date & Time is incomplete or invalid.' });
+      return;
+    }
+
+    // End date must be after start date if both are specified
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (end <= start) {
+        setSettingsStatus({ type: 'error', message: 'End Date & Time must be after the Start Date & Time.' });
+        return;
+      }
+    }
+
     setSettingsStatus({ type: 'loading', message: 'Saving settings...' });
     try {
       const payload = {
@@ -346,7 +385,7 @@ export default function AdminPanel() {
                     </button>
                   </div>
 
-                  <form onSubmit={handleUpdateSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <form onSubmit={handleUpdateSettings} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Election Title</label>
                       <input 
@@ -386,13 +425,33 @@ export default function AdminPanel() {
                       </label>
                     </div>
       
-                    <div className="grid-responsive-2col" style={{ gap: '1rem' }}>
+                    <div className="grid-responsive-2col" style={{ gap: '1.25rem' }}>
                       <div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
-                          <Calendar size={14} color="var(--primary)" /> Start Date & Time
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 500 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Calendar size={14} color="var(--primary)" /> Start Date & Time
+                          </span>
+                          {isInputClearable('startDateInput', startDate) && (
+                            <button 
+                              type="button" 
+                              onClick={() => handleClearDate('startDateInput', setStartDate)} 
+                              style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                color: 'var(--accent)', 
+                                fontSize: '0.75rem', 
+                                cursor: 'pointer',
+                                padding: 0,
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              Clear
+                            </button>
+                          )}
                         </label>
                         <input 
                           type="datetime-local" 
+                          id="startDateInput"
                           value={startDate}
                           onChange={(e) => setStartDate(e.target.value)}
                           style={{
@@ -405,13 +464,36 @@ export default function AdminPanel() {
                             fontFamily: 'inherit'
                           }}
                         />
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', paddingLeft: '0.25rem' }}>
+                          Leave blank to open immediately
+                        </div>
                       </div>
                       <div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem', fontWeight: 500 }}>
-                          <Calendar size={14} color="var(--accent)" /> End Date & Time
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 500 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Calendar size={14} color="var(--accent)" /> End Date & Time
+                          </span>
+                          {isInputClearable('endDateInput', endDate) && (
+                            <button 
+                              type="button" 
+                              onClick={() => handleClearDate('endDateInput', setEndDate)} 
+                              style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                color: 'var(--accent)', 
+                                fontSize: '0.75rem', 
+                                cursor: 'pointer',
+                                padding: 0,
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              Clear
+                            </button>
+                          )}
                         </label>
                         <input 
                           type="datetime-local" 
+                          id="endDateInput"
                           value={endDate}
                           onChange={(e) => setEndDate(e.target.value)}
                           style={{
@@ -424,6 +506,9 @@ export default function AdminPanel() {
                             fontFamily: 'inherit'
                           }}
                         />
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', paddingLeft: '0.25rem' }}>
+                          Leave blank to keep the election open until manually closed
+                        </div>
                       </div>
                     </div>
       
