@@ -71,8 +71,14 @@ export default function Results() {
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', padding: '1rem 0' }}>
       <div style={{ textAlign: 'center' }}>
-        <h2 style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Live Election Standings</h2>
-        <p style={{ color: 'var(--text-muted)' }}>Real-time aggregated and verified voter turnout and tallies</p>
+        <h2 style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>
+          {!resultsReleased && !isAdmin ? 'Election Turnout & Status' : 'Live Election Standings'}
+        </h2>
+        <p style={{ color: 'var(--text-muted)' }}>
+          {!resultsReleased && !isAdmin 
+            ? 'Official voter participation statistics and audit summaries' 
+            : 'Real-time aggregated and verified voter turnout and tallies'}
+        </p>
       </div>
 
       {/* Election Summary Panel */}

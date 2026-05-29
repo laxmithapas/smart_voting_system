@@ -41,13 +41,15 @@ export default function VotingBooth() {
         console.error("Error fetching election settings:", err);
         setElectionLoading(false);
       });
+  }, []);
 
-    // Fetch active candidates only
+  useEffect(() => {
+    // Fetch active candidates only (refreshes on load and on voter booth entry/exit)
     fetch(`${API_BASE_URL}/candidates?active_only=true`)
       .then(res => res.json())
       .then(data => setCandidates(data.candidates || []))
       .catch(err => console.error("Error fetching candidates:", err));
-  }, []);
+  }, [sessionData]);
 
   // Removing auto-fetch voter status useEffect on ID change for privacy and security.
   // Voter status check is now deferred until authentication form submission.
@@ -329,6 +331,23 @@ export default function VotingBooth() {
           </div>
           <h2 style={{ margin: 0 }} className="text-gradient">Official Ballot Receipt</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Decentralized & Cryptographically Secured</p>
+          <div style={{ 
+            marginTop: '1.25rem', 
+            padding: '0.85rem 1rem', 
+            borderRadius: '12px', 
+            background: 'rgba(99, 102, 241, 0.05)', 
+            border: '1px solid rgba(99, 102, 241, 0.15)',
+            fontSize: '0.9rem',
+            color: 'var(--text-main)',
+            lineHeight: '1.4'
+          }} className="no-print">
+            <strong>Thank you for casting your vote!</strong><br />
+            {electionSettings?.results_released ? (
+              <span>Your vote has been mined. You can now view the live standings.</span>
+            ) : (
+              <span>Your vote has been mined. You will be able to view the election results once they are officially published by the administrator.</span>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--glass-border)', marginBottom: '2rem' }} className="receipt-details">
@@ -381,9 +400,13 @@ export default function VotingBooth() {
             setImage(null);
             setSelectedCandidate('');
             setVoterStatus(null);
-            navigate('/results');
-          }} style={{ width: '100%', padding: '1rem' }}>
-            Done & View Results
+            if (electionSettings?.results_released) {
+              navigate('/results');
+            } else {
+              navigate('/');
+            }
+          }} style={{ width: '100%', padding: '1rem', background: electionSettings?.results_released ? 'var(--primary-gradient)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)', borderColor: electionSettings?.results_released ? 'transparent' : '#059669' }}>
+            {electionSettings?.results_released ? 'Done & View Results' : 'Done & Return Home'}
           </button>
         </div>
       </div>
