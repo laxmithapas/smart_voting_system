@@ -15,7 +15,10 @@ from models.schemas import (
     AdminLoginRequest
 )
 from blockchain.chain import Blockchain
-from auth.face_engine import verify_face, extract_face_encoding, check_liveness
+from auth.face_engine import (
+    verify_face, extract_face_encoding, check_liveness,
+    BiometricUnavailableError, FaceDetectionError
+)
 import uvicorn
 
 # Import database and models
@@ -197,10 +200,15 @@ def authenticate_voter(request: AuthRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail=f"Liveness check failed: {liveness_res.get('error', 'Anti-spoofing verification failed')}")
 
     # Verify Face
-    saved_encoding = json.loads(voter.face_encoding)
-    is_match = verify_face(saved_encoding, request.image)
-    if not is_match:
-        raise HTTPException(status_code=401, detail="Face authentication failed. Biometrics do not match.")
+    try:
+        saved_encoding = json.loads(voter.face_encoding)
+        is_match = verify_face(saved_encoding, request.image)
+        if not is_match:
+            raise HTTPException(status_code=401, detail="Face authentication failed. Biometrics do not match.")
+    except BiometricUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except FaceDetectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
         
     return {
         "message": "Authentication successful", 

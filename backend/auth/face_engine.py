@@ -3,12 +3,24 @@ import numpy as np
 import cv2
 import json
 
+class BiometricError(Exception):
+    """Base class for all biometric-related errors."""
+    pass
+
+class BiometricUnavailableError(BiometricError):
+    """Raised when the face_recognition library or dependencies are not available."""
+    pass
+
+class FaceDetectionError(BiometricError):
+    """Raised when no face is detected or encoding cannot be extracted."""
+    pass
+
 try:
     import face_recognition
     USE_FACE_RECOGNITION = True
 except ImportError:
     USE_FACE_RECOGNITION = False
-    print("WARNING: face_recognition library not found. Using fallback mock verification.")
+    print("WARNING: face_recognition library not found. Using fallback mock verification for registration only.")
 
 def extract_face_encoding(image_base64: str):
     """
@@ -26,6 +38,8 @@ def extract_face_encoding(image_base64: str):
         img_data = base64.b64decode(image_base64)
         nparr = np.frombuffer(img_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return None
         
         if USE_FACE_RECOGNITION:
             rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -49,21 +63,29 @@ def extract_face_encoding(image_base64: str):
 def verify_face(known_encoding: list, image_base64: str) -> bool:
     """
     Verifies if the face in image_base64 matches the known_encoding.
+    Raises BiometricUnavailableError if the face recognition engine is offline.
+    Raises FaceDetectionError if face cannot be found/extracted.
     """
+    if not USE_FACE_RECOGNITION:
+        raise BiometricUnavailableError(
+            "Real biometric verification is unavailable. Authentication cannot proceed safely."
+        )
+
+    if not known_encoding or len(known_encoding) != 128:
+        raise FaceDetectionError(
+            "Registered voter biometric data is corrupted or invalid."
+        )
+
     new_encoding = extract_face_encoding(image_base64)
     if not new_encoding:
-        return False
+        raise FaceDetectionError(
+            "No face detected in the captured image. Please position yourself correctly in front of the camera."
+        )
         
-    if USE_FACE_RECOGNITION:
-        known_enc = np.array(known_encoding)
-        new_enc = np.array(new_encoding)
-        matches = face_recognition.compare_faces([known_enc], new_enc, tolerance=0.6)
-        return bool(matches[0]) if matches else False
-    else:
-        # For mock fallback always return True for demo
-        # If the user wants real face rec, we need face_recognition installed.
-        print("Mock face verification always returning True (Install face_recognition for real auth)")
-        return True
+    known_enc = np.array(known_encoding)
+    new_enc = np.array(new_encoding)
+    matches = face_recognition.compare_faces([known_enc], new_enc, tolerance=0.6)
+    return bool(matches[0]) if matches else False
 
 def check_liveness(image_base64: str) -> dict:
     """
