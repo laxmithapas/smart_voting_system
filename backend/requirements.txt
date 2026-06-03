@@ -5,4 +5,4 @@ opencv-python
 numpy
 keras
 sqlalchemy
-# face_recognition  # uncomment if you have visual studio c++ build tools installed
+face_recognition  # required for secure face biometric verification

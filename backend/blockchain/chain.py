@@ -7,7 +7,12 @@ class Blockchain:
         self.unconfirmed_transactions = []
         self.chain = []
         self.difficulty = 3
-        self.storage_path = Path(__file__).resolve().parent.parent / "blockchain_state.json"
+        import os
+        storage_env = os.getenv("BLOCKCHAIN_STORAGE_PATH")
+        if storage_env:
+            self.storage_path = Path(storage_env)
+        else:
+            self.storage_path = Path(__file__).resolve().parent.parent / "blockchain_state.json"
         self._load_chain()
 
     def create_genesis_block(self):
